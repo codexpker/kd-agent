@@ -23,7 +23,10 @@ class DocumentStructureService:
         if backend == "mysql":
             if self.repository is None:
                 raise RuntimeError("MySQL document backend is not configured")
-            return self.repository.get_document_structure(paper_id)
+            parsed = self.repository.get_document_structure(paper_id)
+            if parsed is not None and parsed.source == "parsed_pdf":
+                return parsed
+            return self.get_gold_snapshot(paper_id)
         raise ValueError(f"unsupported document structure backend: {backend}")
 
     def get_gold_snapshot(self, paper_id: str) -> DocumentStructure | None:
@@ -40,8 +43,8 @@ class DocumentStructureService:
                         id=f"sec-{len(sections) + 1}",
                         title=anchor.label,
                         level=1,
-                        page_start=anchor.page,
-                        page_end=anchor.page,
+                        page_start=None,
+                        page_end=None,
                     )
                 )
         artifacts = [
@@ -50,10 +53,7 @@ class DocumentStructureService:
                 artifact_type=item.artifact_type,
                 label=item.label,
                 caption=None,
-                page=next(
-                    (anchor.page for anchor in record.evidence if anchor.id in item.evidence_ids),
-                    None,
-                ),
+                page=None,
             )
             for item in record.artifacts
         ]
@@ -63,7 +63,7 @@ class DocumentStructureService:
             sections=sections,
             artifacts=artifacts,
             references=[],
-            evidence=record.evidence,
+            evidence=[],
             warnings=[
                 "This is a semantic Gold snapshot, not a parsed PDF layout.",
                 "Missing page, caption, bbox and body-reference fields are intentionally null.",

@@ -55,6 +55,14 @@ AUTHORITY_TABLES = {
     "artifact_role_evidence",
 }
 
+PDF_LAYOUT_TABLES = {
+    "pdf_sources",
+    "pdf_parse_runs",
+    "pdf_sections",
+    "pdf_artifacts",
+    "pdf_body_references",
+}
+
 
 class RecordingGraph:
     def __init__(self, error: Exception | None = None) -> None:
@@ -94,6 +102,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "document_structures",
         "graph_sync_states",
         *AUTHORITY_TABLES,
+        *PDF_LAYOUT_TABLES,
     } <= tables
 
     gold_record_foreign_keys = inspector.get_foreign_keys("paper_gold_records")
@@ -106,6 +115,36 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "claims",
         "evidence_anchors",
     }
+    pdf_source_foreign_keys = inspector.get_foreign_keys("pdf_sources")
+    assert {item["referred_table"] for item in pdf_source_foreign_keys} == {
+        "papers",
+        "paper_sources",
+    }
+    pdf_reference_foreign_keys = inspector.get_foreign_keys("pdf_body_references")
+    assert {item["referred_table"] for item in pdf_reference_foreign_keys} == {
+        "pdf_parse_runs",
+        "pdf_artifacts",
+    }
+    pdf_source_columns = {item["name"] for item in inspector.get_columns("pdf_sources")}
+    assert {
+        "file_bytes",
+        "file_blob",
+        "file_path",
+        "local_path",
+        "pdf_content",
+    }.isdisjoint(pdf_source_columns)
+
+    command.downgrade(config, "0002_reconstructed_authority")
+    authority_only_tables = set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+    assert not (PDF_LAYOUT_TABLES & authority_only_tables)
+    assert AUTHORITY_TABLES <= authority_only_tables
+
+    command.upgrade(config, "head")
+    assert PDF_LAYOUT_TABLES <= set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
 
     command.downgrade(config, "0001_reconstructed")
     downgraded_tables = set(inspect(create_engine(config.attributes["database_url"])).get_table_names())
@@ -118,7 +157,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
 
 
 def test_sqlalchemy_metadata_contains_normalized_authority_entities() -> None:
-    assert AUTHORITY_TABLES <= set(Base.metadata.tables)
+    assert AUTHORITY_TABLES | PDF_LAYOUT_TABLES <= set(Base.metadata.tables)
     assert "uq_paper_gold_records_paper_dataset" in {
         constraint.name
         for constraint in Base.metadata.tables["paper_gold_records"].constraints

@@ -28,5 +28,6 @@
 - 已在SQLite验证空库升级、降级和再升级，并在Docker Desktop + WSL2的MySQL 8.4上完成真实迁移和外键检查。
 - Gold CLI现已默认dry-run，只有显式`--commit`才按`paper_id + dataset_version`事务性写入或替换规范化派生对象；MySQL失败不会调用Neo4j，图失败返回`partial`并记录`failed`。
 - PaperSource已纳入Gold事务：稳定来源键允许多来源并存；同键按来源质量优先、同质量按严格更新的抓取时间替换；低质量或过期候选记为`protected`而不覆盖，并确定唯一主来源。元数据访问策略不替代PDF持久化权利确认。
+- 已新增`0003_reconstructed_pdf_layout`及PDF dry-run/显式提交CLI。规范化表只保存权利依据、文件哈希、解析器版本、章节、Figure/Table、bbox、图注、结构化表格和正文引用位置，不保存PDF原文件或路径。无权利依据时持久化硬阻断；查询优先返回`parsed_pdf`并安全回退到无伪造版面字段的`gold_snapshot`。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

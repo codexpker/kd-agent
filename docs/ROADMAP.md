@@ -25,6 +25,13 @@
   - [x] MySQL提交后才同步Neo4j；MySQL失败时图调用为零，Neo4j失败时返回并持久化`partial/failed`。
   - [x] 通过单元测试、SQLite CLI集成测试，以及MySQL 8.4 / Neo4j 5.26真实双次入库验收。
   - [x] PaperSource按稳定`source_key`并存；同键按来源质量优先、同质量按`retrieved_at`更新，低质量候选返回`protected`且不能覆盖，主来源按质量与时间确定。
+- [x] Step 3：恢复PDF客观版面事实的解析、持久化和查询闭环。
+  - [x] 新增`0003_reconstructed_pdf_layout`，建立PDF来源、解析运行、章节、Figure/Table与正文引用规范化实体；SQLite和MySQL 8.4升降级通过。
+  - [x] 只保存权利依据、文件SHA-256/大小、解析器版本和结构化事实，不保存PDF二进制或本地路径。
+  - [x] CLI默认dry-run；只有显式`--commit`且提供开放全文、用户私有副本或机构授权依据才持久化，无依据时硬阻断且零写入。
+  - [x] 保存章节层级/页码/标题bbox、Artifact页码/bbox/图注/结构化表格，以及正文引用的目标、页码和bbox。
+  - [x] 查询优先返回规范化`parsed_pdf`，缺失时回退到无伪造页码、bbox、图注、表格和正文引用的`gold_snapshot`。
+  - [x] `DocumentStructure`保持客观事实、`PaperDeconstruction`保持科研语义；离线默认模式继续延迟加载数据库仓储和PyMuPDF。
 - [ ] 将 Gold 扩至 5–10 篇并完成仲裁。
 
 ## R3

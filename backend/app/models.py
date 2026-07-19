@@ -120,6 +120,7 @@ class Section(BaseModel):
     level: int = Field(ge=1)
     page_start: int | None = None
     page_end: int | None = None
+    heading_bbox: list[float] | None = None
 
 
 class DocumentArtifact(BaseModel):
@@ -129,7 +130,9 @@ class DocumentArtifact(BaseModel):
     caption: str | None = None
     page: int | None = None
     bbox: list[float] | None = None
+    caption_bbox: list[float] | None = None
     markdown: str | None = None
+    table_data: list[list[str]] | None = None
 
 
 class DocumentReference(BaseModel):
@@ -137,6 +140,7 @@ class DocumentReference(BaseModel):
     artifact_id: str
     text: str
     page: int | None = None
+    bbox: list[float] | None = None
 
 
 class DocumentStructure(BaseModel):
@@ -145,11 +149,49 @@ class DocumentStructure(BaseModel):
     parser_name: str | None = None
     parser_version: str | None = None
     file_sha256: str | None = None
+    page_count: int | None = None
     sections: list[Section]
     artifacts: list[DocumentArtifact]
     references: list[DocumentReference]
-    evidence: list[EvidenceAnchor]
-    warnings: list[str] = []
+    evidence: list[EvidenceAnchor] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_objective_layout(self) -> "DocumentStructure":
+        if self.evidence:
+            raise ValueError(
+                "DocumentStructure cannot contain PaperDeconstruction evidence"
+            )
+        if self.source == "parsed_pdf":
+            if not all(
+                [self.parser_name, self.parser_version, self.file_sha256, self.page_count]
+            ):
+                raise ValueError("parsed_pdf requires parser, file hash and page count")
+        else:
+            if any(
+                [self.parser_name, self.parser_version, self.file_sha256, self.page_count]
+            ):
+                raise ValueError("gold_snapshot cannot claim parsed PDF provenance")
+            if self.references:
+                raise ValueError("gold_snapshot cannot claim body-reference locations")
+            if any(
+                item.page_start is not None
+                or item.page_end is not None
+                or item.heading_bbox is not None
+                for item in self.sections
+            ):
+                raise ValueError("gold_snapshot cannot claim section layout locations")
+            if any(
+                item.page is not None
+                or item.bbox is not None
+                or item.caption_bbox is not None
+                or item.caption is not None
+                or item.markdown is not None
+                or item.table_data is not None
+                for item in self.artifacts
+            ):
+                raise ValueError("gold_snapshot cannot claim artifact layout facts")
+        return self
 
 
 class SearchRequest(BaseModel):

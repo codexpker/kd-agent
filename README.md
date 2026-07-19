@@ -47,4 +47,19 @@ python -m app.cli.r2_acceptance
 
 验收命令会应用新的重建迁移链，连续执行两次Gold→MySQL规范化实体与Neo4j同步，并检查第二次MySQL写入和PaperSource元数据均为`unchanged`、图中节点数不增长。PaperSource按稳定来源键并存，低质量或过期的同键候选不会覆盖已存权威元数据。它只导入已完成的开发记录，`queued`论文仍不会入库。日常运行`python -m app.cli.ingest_gold`默认为零写入dry-run；只有增加`--commit`才写MySQL。
 
+PDF版面事实链路需要可选解析依赖，并且默认只做本地预览：
+
+```bash
+python -m pip install -e './backend[pdf]'
+cd backend
+python -m app.cli.ingest_pdf anomaly-transformer-2022 /path/to/paper.pdf
+```
+
+只有显式`--commit`并同时提供`--rights-basis`与`--confirmed-by`才会把结构化结果写入MySQL。
+允许的依据仅为`open_full_text`、`user_private_copy`或`institution_authorized`。数据库保存
+SHA-256、权利确认、解析器版本、章节、Figure/Table、bbox、图注、结构化表格和正文引用位置，
+不保存PDF二进制或本地路径。将`DOCUMENT_STRUCTURE_BACKEND=mysql`后，
+`GET /api/v1/papers/{paper_id}/document-structure`优先返回`parsed_pdf`，否则返回不带伪造版面字段的
+`gold_snapshot`。
+
 详细说明见 `docs/LOCAL_DEVELOPMENT.md` 与 `docs/ROADMAP.md`。

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
@@ -262,6 +263,128 @@ class ArtifactRoleEvidenceRow(Base):
     evidence_anchor_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("evidence_anchors.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class PdfSourceRow(Base):
+    __tablename__ = "pdf_sources"
+    __table_args__ = (
+        UniqueConstraint("paper_id", "file_sha256", name="uq_pdf_sources_paper_file"),
+        Index("ix_pdf_sources_file_sha256", "file_sha256"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    paper_id: Mapped[str] = mapped_column(
+        String(191), ForeignKey("papers.paper_id", ondelete="CASCADE"), nullable=False
+    )
+    paper_source_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("paper_sources.id", ondelete="SET NULL")
+    )
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    rights_basis: Mapped[str] = mapped_column(String(32), nullable=False)
+    rights_confirmed_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    rights_note: Mapped[str] = mapped_column(Text, nullable=False)
+    rights_confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PdfParseRunRow(Base):
+    __tablename__ = "pdf_parse_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "pdf_source_id",
+            "parser_name",
+            "parser_version",
+            "content_sha256",
+            name="uq_pdf_runs_source_parser_content",
+        ),
+        Index("ix_pdf_parse_runs_source_status", "pdf_source_id", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pdf_source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pdf_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    parser_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PdfSectionRow(Base):
+    __tablename__ = "pdf_sections"
+    __table_args__ = (
+        UniqueConstraint("parse_run_id", "local_id", name="uq_pdf_sections_run_local"),
+        UniqueConstraint("parse_run_id", "section_order", name="uq_pdf_sections_run_order"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parse_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pdf_parse_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    local_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    section_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    heading_bbox: Mapped[list[float] | None] = mapped_column(JSON)
+
+
+class PdfArtifactRow(Base):
+    __tablename__ = "pdf_artifacts"
+    __table_args__ = (
+        UniqueConstraint("parse_run_id", "local_id", name="uq_pdf_artifacts_run_local"),
+        UniqueConstraint("parse_run_id", "artifact_order", name="uq_pdf_artifacts_run_order"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parse_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pdf_parse_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    local_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    artifact_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    caption: Mapped[str] = mapped_column(Text, nullable=False)
+    page: Mapped[int] = mapped_column(Integer, nullable=False)
+    bbox: Mapped[list[float] | None] = mapped_column(JSON)
+    caption_bbox: Mapped[list[float] | None] = mapped_column(JSON)
+    table_markdown: Mapped[str | None] = mapped_column(Text)
+    table_data: Mapped[list[list[str]] | None] = mapped_column(JSON)
+
+
+class PdfBodyReferenceRow(Base):
+    __tablename__ = "pdf_body_references"
+    __table_args__ = (
+        UniqueConstraint(
+            "parse_run_id", "local_id", name="uq_pdf_references_run_local"
+        ),
+        UniqueConstraint(
+            "parse_run_id", "reference_order", name="uq_pdf_references_run_order"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parse_run_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pdf_parse_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    artifact_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("pdf_artifacts.id", ondelete="CASCADE"), nullable=False
+    )
+    local_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    reference_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    page: Mapped[int] = mapped_column(Integer, nullable=False)
+    bbox: Mapped[list[float] | None] = mapped_column(JSON)
 
 
 class DocumentStructureRow(Base):

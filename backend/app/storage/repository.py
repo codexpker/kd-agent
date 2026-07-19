@@ -616,7 +616,18 @@ class PaperRepository:
     def get_document_structure(self, paper_id: str) -> DocumentStructure | None:
         with self._session_factory() as session:
             row = session.get(DocumentStructureRow, paper_id)
-            return DocumentStructure.model_validate(row.structure) if row is not None else None
+            if row is None or row.source != "parsed_pdf":
+                return None
+            payload = dict(row.structure)
+            payload["evidence"] = []
+            if payload.get("page_count") is None:
+                pages = [
+                    *(item.get("page_end") for item in payload.get("sections", [])),
+                    *(item.get("page") for item in payload.get("artifacts", [])),
+                    *(item.get("page") for item in payload.get("references", [])),
+                ]
+                payload["page_count"] = max((page for page in pages if page), default=1)
+            return DocumentStructure.model_validate(payload)
 
     def get_paper(self, paper_id: str) -> PaperDeconstruction | None:
         with self._session_factory() as session:
