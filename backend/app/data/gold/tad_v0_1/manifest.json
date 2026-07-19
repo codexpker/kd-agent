@@ -1,0 +1,12 @@
+{
+  "dataset_version": "tad_v0.1-reconstructed",
+  "description": "TAD Gold development set; only completed records are publicly loadable.",
+  "papers": [
+    {"paper_id": "anomaly-transformer-2022", "title": "Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy", "status": "development_seed"},
+    {"paper_id": "omnianomaly-2019", "title": "Robust Anomaly Detection for Multivariate Time Series through Stochastic Recurrent Neural Network", "status": "queued"},
+    {"paper_id": "usad-2020", "title": "USAD: UnSupervised Anomaly Detection on Multivariate Time Series", "status": "queued"},
+    {"paper_id": "tranad-2022", "title": "TranAD: Deep Transformer Networks for Anomaly Detection in Multivariate Time Series Data", "status": "queued"},
+    {"paper_id": "dcdetector-2023", "title": "DCdetector: Dual Attention Contrastive Representation Learning for Time Series Anomaly Detection", "status": "queued"}
+  ]
+}
+

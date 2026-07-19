@@ -1,0 +1,2 @@
+"""Gold paper records."""
+

@@ -1,0 +1,53 @@
+{
+  "dataset_version": "tad_v0.1-reconstructed",
+  "paper_id": "anomaly-transformer-2022",
+  "title": "Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy",
+  "venue": "ICLR",
+  "year": 2022,
+  "status": "development_seed",
+  "narrative_moves": [
+    {"id":"nm-1","order":1,"move":"Establish problem","purpose":"Explain why unsupervised multivariate time-series anomaly detection matters.","evidence_ids":["ev-1"]},
+    {"id":"nm-2","order":2,"move":"Critique point-wise reconstruction","purpose":"Show that reconstruction error alone misses relationship-level anomaly signals.","evidence_ids":["ev-2"]},
+    {"id":"nm-3","order":3,"move":"Introduce association discrepancy","purpose":"Turn the difference between prior and learned associations into an anomaly criterion.","evidence_ids":["ev-3"]},
+    {"id":"nm-4","order":4,"move":"Resolve optimization tension","purpose":"Use minimax learning to amplify normal/anomalous association differences.","evidence_ids":["ev-4"]},
+    {"id":"nm-5","order":5,"move":"Validate detection performance","purpose":"Compare against representative baselines on benchmark datasets.","evidence_ids":["ev-5","ev-6"]},
+    {"id":"nm-6","order":6,"move":"Isolate mechanism","purpose":"Test whether association discrepancy and training strategy contribute independently.","evidence_ids":["ev-7"]},
+    {"id":"nm-7","order":7,"move":"Visualize explanation","purpose":"Make learned temporal associations and anomaly contrast inspectable.","evidence_ids":["ev-8","ev-9"]},
+    {"id":"nm-8","order":8,"move":"State boundary","purpose":"Limit conclusions to evaluated datasets and protocol.","evidence_ids":["ev-10"]}
+  ],
+  "claims": [
+    {"id":"cl-1","claim_type":"problem","statement":"Anomalies can be characterized by temporal association patterns rather than only point-wise reconstruction error.","evidence_ids":["ev-2","ev-3"]},
+    {"id":"cl-2","claim_type":"method","statement":"Association discrepancy supplies an anomaly-sensitive signal and minimax learning sharpens it.","evidence_ids":["ev-3","ev-4"]},
+    {"id":"cl-3","claim_type":"result","statement":"The reported method improves benchmark detection results under the paper's evaluation protocol.","evidence_ids":["ev-5","ev-6"]},
+    {"id":"cl-4","claim_type":"boundary","statement":"The evidence is limited to the datasets, anomaly labels, preprocessing and point-adjustment protocol used in the study.","evidence_ids":["ev-10"]}
+  ],
+  "experiment_intents": [
+    {"id":"ex-1","title":"Main benchmark comparison","question":"Does the complete method outperform representative alternatives across datasets?","design_reason":"Multiple public datasets and baseline families test whether gains generalize beyond one operational setting.","variables":["dataset","baseline family","precision","recall","F1"],"supports_claim_ids":["cl-3"],"evidence_ids":["ev-5","ev-6"]},
+    {"id":"ex-2","title":"Mechanism ablation","question":"Which components are necessary for the observed gain?","design_reason":"Removing discrepancy or minimax elements separates the claimed mechanism from model capacity.","variables":["association discrepancy","minimax strategy","F1"],"supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]}
+  ],
+  "artifacts": [
+    {"id":"ar-1","artifact_type":"figure","label":"Figure 1","role":"Motivation diagram","why_here":"Contrasts normal and anomalous association patterns before formalizing the method.","supports_claim_ids":["cl-1"],"evidence_ids":["ev-2"]},
+    {"id":"ar-2","artifact_type":"figure","label":"Figure 2","role":"Architecture overview","why_here":"Maps the abstract discrepancy idea to a trainable pipeline.","supports_claim_ids":["cl-2"],"evidence_ids":["ev-4"]},
+    {"id":"ar-3","artifact_type":"table","label":"Table 1","role":"Primary quantitative evidence","why_here":"Condenses the cross-dataset baseline comparison used for the main result claim.","supports_claim_ids":["cl-3"],"evidence_ids":["ev-5"]},
+    {"id":"ar-4","artifact_type":"table","label":"Table 2","role":"Ablation evidence","why_here":"Shows whether removing claimed components changes the outcome.","supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]},
+    {"id":"ar-5","artifact_type":"figure","label":"Figure 4","role":"Qualitative mechanism evidence","why_here":"Lets readers inspect association maps instead of trusting aggregate scores alone.","supports_claim_ids":["cl-1","cl-2"],"evidence_ids":["ev-8","ev-9"]}
+  ],
+  "evidence": [
+    {"id":"ev-1","kind":"section","label":"Introduction","excerpt":"Problem motivation and task framing; paraphrased development annotation.","page":null,"verified":false},
+    {"id":"ev-2","kind":"figure","label":"Figure 1","excerpt":"Conceptual contrast between normal and anomalous temporal associations; verify against authorized PDF.","page":null,"verified":false},
+    {"id":"ev-3","kind":"section","label":"Association Discrepancy","excerpt":"Definition and intended anomaly signal; paraphrased development annotation.","page":null,"verified":false},
+    {"id":"ev-4","kind":"section","label":"Minimax Association Learning","excerpt":"Optimization rationale; paraphrased development annotation.","page":null,"verified":false},
+    {"id":"ev-5","kind":"table","label":"Table 1","excerpt":"Main reported benchmark comparison; exact values intentionally omitted until PDF verification.","page":null,"verified":false},
+    {"id":"ev-6","kind":"section","label":"Main Results","excerpt":"Authors' interpretation of quantitative comparisons; verify in source.","page":null,"verified":false},
+    {"id":"ev-7","kind":"table","label":"Table 2","excerpt":"Component ablation summary; exact values intentionally omitted until verification.","page":null,"verified":false},
+    {"id":"ev-8","kind":"figure","label":"Figure 4","excerpt":"Learned association visualization; role annotation requires second reviewer.","page":null,"verified":false},
+    {"id":"ev-9","kind":"section","label":"Case Study","excerpt":"Qualitative discussion connecting associations and detected anomalies.","page":null,"verified":false},
+    {"id":"ev-10","kind":"section","label":"Evaluation Boundary","excerpt":"Coverage is bounded by evaluated datasets and protocol; reviewer-added boundary statement.","page":null,"verified":false}
+  ],
+  "limitations": [
+    "This reconstructed record is a single-reviewer development seed, not a frozen Gold item.",
+    "Page numbers and exact quotations are withheld until an authorized full text is parsed and reviewed.",
+    "Reported comparisons should be re-evaluated under consistent, non-inflating anomaly scoring protocols."
+  ]
+}
+
