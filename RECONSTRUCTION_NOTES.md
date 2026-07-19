@@ -27,6 +27,6 @@
 - `0002_reconstructed_authority` 建立Paper、PaperSource、GoldDatasetVersion、PaperGoldRecord、NarrativeMove、Claim、ExperimentIntent、ArtifactRole、EvidenceAnchor、Limitation及闭合关系表。
 - 已在SQLite验证空库升级、降级和再升级，并在Docker Desktop + WSL2的MySQL 8.4上完成真实迁移和外键检查。
 - Gold CLI现已默认dry-run，只有显式`--commit`才按`paper_id + dataset_version`事务性写入或替换规范化派生对象；MySQL失败不会调用Neo4j，图失败返回`partial`并记录`failed`。
-- 更高质量或更新PaperSource元数据的防覆盖规则仍待后续完成，不在本轮Step 2范围内。
+- PaperSource已纳入Gold事务：稳定来源键允许多来源并存；同键按来源质量优先、同质量按严格更新的抓取时间替换；低质量或过期候选记为`protected`而不覆盖，并确定唯一主来源。元数据访问策略不替代PDF持久化权利确认。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

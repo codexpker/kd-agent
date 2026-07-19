@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from app.cli.ingest_gold import parse_args
-from app.storage.tables import PaperGoldRecordRow, PaperRow
+from app.storage.tables import PaperGoldRecordRow, PaperRow, PaperSourceRow
 
 
 def test_cli_defaults_to_dry_run() -> None:
@@ -46,10 +46,12 @@ def test_cli_dry_run_then_explicit_commit_is_idempotent(tmp_path: Path) -> None:
     dry_run_payload = json.loads(dry_run.stdout)
     assert dry_run_payload[0]["overall_status"] == "dry_run"
     assert dry_run_payload[0]["committed"] is False
+    assert dry_run_payload[0]["source_actions"][0]["action"] == "created"
 
     engine = create_engine(database_url)
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(PaperRow)) == 0
+        assert session.scalar(select(func.count()).select_from(PaperSourceRow)) == 0
 
     first_commit = subprocess.run(
         [sys.executable, "-m", "app.cli.ingest_gold", "--commit"],
@@ -68,7 +70,12 @@ def test_cli_dry_run_then_explicit_commit_is_idempotent(tmp_path: Path) -> None:
         text=True,
     )
 
-    assert json.loads(first_commit.stdout)[0]["database_action"] == "created"
-    assert json.loads(second_commit.stdout)[0]["database_action"] == "unchanged"
+    first_payload = json.loads(first_commit.stdout)[0]
+    second_payload = json.loads(second_commit.stdout)[0]
+    assert first_payload["database_action"] == "created"
+    assert first_payload["source_actions"][0]["action"] == "created"
+    assert second_payload["database_action"] == "unchanged"
+    assert second_payload["source_actions"][0]["action"] == "unchanged"
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(PaperGoldRecordRow)) == 1
+        assert session.scalar(select(func.count()).select_from(PaperSourceRow)) == 1

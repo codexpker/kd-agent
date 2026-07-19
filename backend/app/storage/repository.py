@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -7,7 +8,7 @@ from typing import Any, Literal
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import DocumentStructure, PaperDeconstruction
+from app.models import DocumentStructure, PaperDeconstruction, PaperSource
 from app.storage.tables import (
     ArtifactRoleClaimRow,
     ArtifactRoleEvidenceRow,
@@ -26,11 +27,23 @@ from app.storage.tables import (
     PaperGoldRecordRow,
     PaperLimitationRow,
     PaperRow,
+    PaperSourceRow,
 )
 
 
 IngestAction = Literal["created", "updated", "unchanged"]
 GraphSyncStatus = Literal["pending", "synced", "failed"]
+SourceIngestAction = Literal["created", "updated", "unchanged", "protected"]
+
+SOURCE_QUALITY_RANK = {
+    "official_publication": 600,
+    "curated_registry": 500,
+    "openreview": 450,
+    "crossref": 400,
+    "arxiv": 300,
+    "openalex": 250,
+    "model_extracted": 100,
+}
 
 
 def _canonical_dict(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -43,11 +56,18 @@ def canonical_payload(model: PaperDeconstruction | DocumentStructure) -> tuple[d
 
 
 @dataclass(frozen=True)
+class PaperSourceIngestResult:
+    source_key: str
+    action: SourceIngestAction
+
+
+@dataclass(frozen=True)
 class DatabaseIngestResult:
     paper_id: str
     action: IngestAction
     content_sha256: str
     graph_status: GraphSyncStatus
+    source_actions: tuple[PaperSourceIngestResult, ...]
 
 
 class PaperRepository:
@@ -59,12 +79,15 @@ class PaperRepository:
         record: PaperDeconstruction,
         structure: DocumentStructure,
         manifest: dict[str, Any],
+        sources: Sequence[PaperSource] = (),
     ) -> DatabaseIngestResult:
+        self._validate_source_keys(sources)
         _, record_hash = canonical_payload(record)
         _, structure_hash = canonical_payload(structure)
         _, manifest_hash = _canonical_dict(manifest)
 
         with self._session_factory() as session:
+            source_actions = self._plan_paper_sources(session, record.paper_id, sources)
             gold_record = self._find_gold_record(
                 session, record.paper_id, record.dataset_version
             )
@@ -85,6 +108,9 @@ class PaperRepository:
                 or document.content_sha256 != structure_hash
                 or dataset_version is None
                 or dataset_version.manifest_sha256 != manifest_hash
+                or any(
+                    item.action in {"created", "updated"} for item in source_actions
+                )
             ):
                 action = "updated"
 
@@ -99,6 +125,7 @@ class PaperRepository:
                 action=action,
                 content_sha256=record_hash,
                 graph_status=graph_status,
+                source_actions=source_actions,
             )
 
     def upsert(
@@ -106,7 +133,9 @@ class PaperRepository:
         record: PaperDeconstruction,
         structure: DocumentStructure,
         manifest: dict[str, Any],
+        sources: Sequence[PaperSource] = (),
     ) -> DatabaseIngestResult:
+        self._validate_source_keys(sources)
         record_payload, record_hash = canonical_payload(record)
         structure_payload, structure_hash = canonical_payload(structure)
         manifest_payload, manifest_hash = _canonical_dict(manifest)
@@ -161,6 +190,9 @@ class PaperRepository:
                 paper.updated_at = now
 
             session.flush()
+            source_actions = self._upsert_paper_sources(
+                session, record.paper_id, sources, now
+            )
             gold_record = self._find_gold_record(
                 session, record.paper_id, record.dataset_version
             )
@@ -216,7 +248,12 @@ class PaperRepository:
                 document.updated_at = now
 
             if action == "unchanged" and (
-                paper_changed or document_changed or manifest_changed
+                paper_changed
+                or document_changed
+                or manifest_changed
+                or any(
+                    item.action in {"created", "updated"} for item in source_actions
+                )
             ):
                 action = "updated"
 
@@ -243,6 +280,7 @@ class PaperRepository:
                 action=action,
                 content_sha256=record_hash,
                 graph_status=graph_state.status,
+                source_actions=source_actions,
             )
 
     @staticmethod
@@ -260,6 +298,149 @@ class PaperRepository:
     def _dataset_lifecycle(manifest: dict[str, Any]) -> str:
         statuses = {str(item.get("status", "")) for item in manifest.get("papers", [])}
         return "frozen" if statuses == {"frozen"} else "development"
+
+    @staticmethod
+    def _validate_source_keys(sources: Sequence[PaperSource]) -> None:
+        source_keys = [source.source_key for source in sources]
+        if len(source_keys) != len(set(source_keys)):
+            raise ValueError("paper sources must have unique source_key values")
+
+    @staticmethod
+    def _as_utc(value: datetime | None) -> datetime:
+        if value is None:
+            return datetime.min.replace(tzinfo=UTC)
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @classmethod
+    def _source_action(
+        cls, existing: PaperSourceRow | None, incoming: PaperSource
+    ) -> SourceIngestAction:
+        if existing is None:
+            return "created"
+        if (
+            existing.source_type == incoming.source_type
+            and existing.source_uri == incoming.source_uri
+            and existing.external_id == incoming.external_id
+            and existing.license_name == incoming.license_name
+            and existing.access_policy == incoming.access_policy
+            and (existing.source_metadata or {}) == incoming.source_metadata
+            and cls._as_utc(existing.retrieved_at)
+            == cls._as_utc(incoming.retrieved_at)
+        ):
+            return "unchanged"
+
+        existing_quality = SOURCE_QUALITY_RANK.get(existing.source_type, 0)
+        incoming_quality = SOURCE_QUALITY_RANK[incoming.source_type]
+        if incoming_quality > existing_quality:
+            return "updated"
+        if (
+            incoming_quality == existing_quality
+            and cls._as_utc(incoming.retrieved_at)
+            > cls._as_utc(existing.retrieved_at)
+        ):
+            return "updated"
+        return "protected"
+
+    @classmethod
+    def _plan_paper_sources(
+        cls,
+        session: Session,
+        paper_id: str,
+        sources: Sequence[PaperSource],
+    ) -> tuple[PaperSourceIngestResult, ...]:
+        return tuple(
+            PaperSourceIngestResult(
+                source_key=source.source_key,
+                action=cls._source_action(
+                    session.scalar(
+                        select(PaperSourceRow).where(
+                            PaperSourceRow.paper_id == paper_id,
+                            PaperSourceRow.source_key == source.source_key,
+                        )
+                    ),
+                    source,
+                ),
+            )
+            for source in sources
+        )
+
+    @classmethod
+    def _upsert_paper_sources(
+        cls,
+        session: Session,
+        paper_id: str,
+        sources: Sequence[PaperSource],
+        now: datetime,
+    ) -> tuple[PaperSourceIngestResult, ...]:
+        results: list[PaperSourceIngestResult] = []
+        for source in sources:
+            existing = session.scalar(
+                select(PaperSourceRow).where(
+                    PaperSourceRow.paper_id == paper_id,
+                    PaperSourceRow.source_key == source.source_key,
+                )
+            )
+            action = cls._source_action(existing, source)
+            results.append(
+                PaperSourceIngestResult(source_key=source.source_key, action=action)
+            )
+            if action == "created":
+                session.add(
+                    PaperSourceRow(
+                        paper_id=paper_id,
+                        source_key=source.source_key,
+                        source_type=source.source_type,
+                        source_uri=source.source_uri,
+                        external_id=source.external_id,
+                        license_name=source.license_name,
+                        access_policy=source.access_policy,
+                        is_primary=False,
+                        source_metadata=source.source_metadata,
+                        retrieved_at=source.retrieved_at,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            elif action == "updated":
+                assert existing is not None
+                existing.source_type = source.source_type
+                existing.source_uri = source.source_uri
+                existing.external_id = source.external_id
+                existing.license_name = source.license_name
+                existing.access_policy = source.access_policy
+                existing.source_metadata = source.source_metadata
+                existing.retrieved_at = source.retrieved_at
+                existing.updated_at = now
+
+        if sources:
+            session.flush()
+            cls._select_primary_source(session, paper_id, now)
+        return tuple(results)
+
+    @classmethod
+    def _select_primary_source(
+        cls, session: Session, paper_id: str, now: datetime
+    ) -> None:
+        rows = session.scalars(
+            select(PaperSourceRow).where(PaperSourceRow.paper_id == paper_id)
+        ).all()
+        if not rows:
+            return
+        primary = max(
+            rows,
+            key=lambda row: (
+                SOURCE_QUALITY_RANK.get(row.source_type, 0),
+                cls._as_utc(row.retrieved_at),
+                row.source_key,
+            ),
+        )
+        for row in rows:
+            should_be_primary = row.id == primary.id
+            if row.is_primary != should_be_primary:
+                row.is_primary = should_be_primary
+                row.updated_at = now
 
     @staticmethod
     def _replace_authority_entities(

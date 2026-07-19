@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,7 @@ from sqlalchemy import create_engine, func, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.gold_dataset import GoldDataset
+from app.models import PaperSource
 from app.services.document_structure import DocumentStructureService
 from app.storage.ingestion import GoldInfrastructureIngestor
 from app.storage.repository import PaperRepository
@@ -30,6 +32,7 @@ from app.storage.tables import (
     PaperGoldRecordRow,
     PaperLimitationRow,
     PaperRow,
+    PaperSourceRow,
 )
 
 
@@ -133,6 +136,7 @@ def test_gold_import_is_idempotent_and_mysql_read_model_works(
     assert dry_run[0].overall_status == "dry_run"
     assert dry_run[0].database_action == "created"
     assert dry_run[0].committed is False
+    assert [item.action for item in dry_run[0].source_actions] == ["created"]
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(PaperRow)) == 0
 
@@ -143,8 +147,11 @@ def test_gold_import_is_idempotent_and_mysql_read_model_works(
 
     assert [item.database_action for item in first] == ["created"]
     assert [item.database_action for item in second] == ["unchanged"]
+    assert [item.action for item in first[0].source_actions] == ["created"]
+    assert [item.action for item in second[0].source_actions] == ["unchanged"]
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(PaperRow)) == 1
+        assert session.scalar(select(func.count()).select_from(PaperSourceRow)) == 1
         assert session.scalar(select(func.count()).select_from(DocumentStructureRow)) == 1
         assert session.scalar(select(func.count()).select_from(GraphSyncStateRow)) == 1
         assert session.scalar(select(func.count()).select_from(GoldDatasetVersionRow)) == 1
@@ -162,6 +169,11 @@ def test_gold_import_is_idempotent_and_mysql_read_model_works(
         assert session.scalar(select(func.count()).select_from(ArtifactRoleClaimRow)) == 7
         assert session.scalar(select(func.count()).select_from(ArtifactRoleEvidenceRow)) == 6
         assert session.scalar(select(PaperGoldRecordRow.updated_at)) == first_updated_at
+        source = session.scalar(select(PaperSourceRow))
+        assert source is not None
+        assert source.is_primary is True
+        assert source.access_policy == "metadata_only"
+        assert source.source_metadata["full_text_rights_confirmed"] is False
 
     structure = DocumentStructureService(dataset, paper_repository).get(
         "anomaly-transformer-2022", "mysql"
@@ -227,6 +239,182 @@ def test_changed_gold_record_replaces_derived_entities_transactionally(
         ) == changed_statement
 
 
+def test_paper_source_quality_precedes_freshness(
+    repository: tuple[PaperRepository, sessionmaker[Session]],
+) -> None:
+    paper_repository, factory = repository
+    dataset = GoldDataset()
+    record = dataset.get("anomaly-transformer-2022")
+    structure = DocumentStructureService(dataset).get_gold_snapshot(
+        "anomaly-transformer-2022"
+    )
+    assert record is not None
+    assert structure is not None
+    trusted = PaperSource(
+        source_key="metadata:test-provider",
+        source_type="crossref",
+        source_uri="https://trusted.example/record",
+        external_id="trusted-id",
+        license_name=None,
+        access_policy="metadata_only",
+        source_metadata={"title": "Trusted title"},
+        retrieved_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    lower_quality = trusted.model_copy(
+        update={
+            "source_type": "model_extracted",
+            "source_uri": "https://lower-quality.example/record",
+            "source_metadata": {"title": "Unverified replacement"},
+            "retrieved_at": datetime(2026, 2, 1, tzinfo=UTC),
+        }
+    )
+    higher_quality = trusted.model_copy(
+        update={
+            "source_type": "official_publication",
+            "source_uri": "https://official.example/record",
+            "source_metadata": {"title": "Official title"},
+            "retrieved_at": datetime(2025, 12, 1, tzinfo=UTC),
+        }
+    )
+
+    created = paper_repository.upsert(
+        record, structure, dataset.manifest, [trusted]
+    )
+    protected = paper_repository.upsert(
+        record, structure, dataset.manifest, [lower_quality]
+    )
+
+    assert [item.action for item in created.source_actions] == ["created"]
+    assert [item.action for item in protected.source_actions] == ["protected"]
+    with factory() as session:
+        row = session.scalar(
+            select(PaperSourceRow).where(
+                PaperSourceRow.source_key == trusted.source_key
+            )
+        )
+        assert row is not None
+        assert row.source_type == "crossref"
+        assert row.source_uri == trusted.source_uri
+        assert row.source_metadata == trusted.source_metadata
+        assert row.retrieved_at == trusted.retrieved_at.replace(tzinfo=None)
+
+    upgraded = paper_repository.upsert(
+        record, structure, dataset.manifest, [higher_quality]
+    )
+    assert [item.action for item in upgraded.source_actions] == ["updated"]
+    with factory() as session:
+        row = session.scalar(
+            select(PaperSourceRow).where(
+                PaperSourceRow.source_key == trusted.source_key
+            )
+        )
+        assert row is not None
+        assert row.source_type == "official_publication"
+        assert row.source_uri == higher_quality.source_uri
+        assert row.source_metadata == higher_quality.source_metadata
+
+
+def test_paper_source_updates_at_equal_quality_only_when_strictly_newer(
+    repository: tuple[PaperRepository, sessionmaker[Session]],
+) -> None:
+    paper_repository, factory = repository
+    dataset = GoldDataset()
+    record = dataset.get("anomaly-transformer-2022")
+    structure = DocumentStructureService(dataset).get_gold_snapshot(
+        "anomaly-transformer-2022"
+    )
+    assert record is not None
+    assert structure is not None
+    original = PaperSource(
+        source_key="metadata:crossref-test",
+        source_type="crossref",
+        source_uri="https://example.invalid/v1",
+        external_id="test-id",
+        license_name=None,
+        access_policy="metadata_only",
+        source_metadata={"version": 1},
+        retrieved_at=datetime(2026, 2, 1, tzinfo=UTC),
+    )
+    older = original.model_copy(
+        update={
+            "source_uri": "https://example.invalid/older",
+            "source_metadata": {"version": 0},
+            "retrieved_at": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+    newer = original.model_copy(
+        update={
+            "source_uri": "https://example.invalid/v2",
+            "source_metadata": {"version": 2},
+            "retrieved_at": datetime(2026, 3, 1, tzinfo=UTC),
+        }
+    )
+
+    paper_repository.upsert(record, structure, dataset.manifest, [original])
+    protected = paper_repository.upsert(record, structure, dataset.manifest, [older])
+    updated = paper_repository.upsert(record, structure, dataset.manifest, [newer])
+
+    assert [item.action for item in protected.source_actions] == ["protected"]
+    assert [item.action for item in updated.source_actions] == ["updated"]
+    with factory() as session:
+        row = session.scalar(
+            select(PaperSourceRow).where(
+                PaperSourceRow.source_key == original.source_key
+            )
+        )
+        assert row is not None
+        assert row.source_uri == newer.source_uri
+        assert row.source_metadata == newer.source_metadata
+
+
+def test_highest_quality_paper_source_is_primary_without_deleting_alternatives(
+    repository: tuple[PaperRepository, sessionmaker[Session]],
+) -> None:
+    paper_repository, factory = repository
+    dataset = GoldDataset()
+    record = dataset.get("anomaly-transformer-2022")
+    structure = DocumentStructureService(dataset).get_gold_snapshot(
+        "anomaly-transformer-2022"
+    )
+    assert record is not None
+    assert structure is not None
+    aggregator = PaperSource(
+        source_key="metadata:openalex-test",
+        source_type="openalex",
+        source_uri="https://example.invalid/openalex",
+        external_id="openalex-id",
+        license_name=None,
+        access_policy="metadata_only",
+        source_metadata={},
+        retrieved_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    official = PaperSource(
+        source_key="metadata:official-test",
+        source_type="official_publication",
+        source_uri="https://example.invalid/official",
+        external_id="official-id",
+        license_name=None,
+        access_policy="metadata_only",
+        source_metadata={},
+        retrieved_at=datetime(2025, 6, 1, tzinfo=UTC),
+    )
+
+    paper_repository.upsert(record, structure, dataset.manifest, [aggregator])
+    result = paper_repository.upsert(
+        record, structure, dataset.manifest, [aggregator, official]
+    )
+
+    assert [item.action for item in result.source_actions] == ["unchanged", "created"]
+    with factory() as session:
+        rows = session.scalars(
+            select(PaperSourceRow).order_by(PaperSourceRow.source_key)
+        ).all()
+        assert len(rows) == 2
+        assert [row.source_key for row in rows if row.is_primary] == [
+            official.source_key
+        ]
+
+
 def test_successful_graph_sync_is_skipped_when_content_is_unchanged(
     repository: tuple[PaperRepository, sessionmaker[Session]],
 ) -> None:
@@ -287,6 +475,7 @@ def test_mysql_transaction_failure_rolls_back_and_prevents_graph_synchronization
 
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(PaperRow)) == 0
+        assert session.scalar(select(func.count()).select_from(PaperSourceRow)) == 0
         assert session.scalar(select(func.count()).select_from(PaperGoldRecordRow)) == 0
         assert session.scalar(select(func.count()).select_from(GoldDatasetVersionRow)) == 0
     assert graph.schema_calls == 0

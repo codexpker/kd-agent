@@ -1,6 +1,39 @@
-from typing import Literal
+from datetime import UTC, datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class PaperSource(BaseModel):
+    source_key: str = Field(min_length=1, max_length=191)
+    source_type: Literal[
+        "official_publication",
+        "curated_registry",
+        "openreview",
+        "crossref",
+        "arxiv",
+        "openalex",
+        "model_extracted",
+    ]
+    source_uri: str | None = None
+    external_id: str | None = None
+    license_name: str | None = None
+    access_policy: Literal[
+        "metadata_only",
+        "open_full_text",
+        "user_private_copy",
+        "institution_authorized",
+        "unknown",
+    ]
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
+    retrieved_at: datetime
+
+    @field_validator("retrieved_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("retrieved_at must include a timezone")
+        return value.astimezone(UTC)
 
 
 class EvidenceAnchor(BaseModel):
@@ -137,4 +170,3 @@ class SearchResponse(BaseModel):
     query: str
     backend: str
     hits: list[SearchHit]
-

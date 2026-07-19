@@ -66,6 +66,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "paper_id": item.paper_id,
                     "database_action": item.database_action,
+                    "source_actions": [
+                        {
+                            "source_key": source.source_key,
+                            "action": source.action,
+                        }
+                        for source in item.source_actions
+                    ],
                     "committed": item.committed,
                     "graph_status": item.graph_status,
                     "overall_status": item.overall_status,

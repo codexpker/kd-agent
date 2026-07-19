@@ -5,7 +5,12 @@ from app.gold_dataset import GoldDataset
 from app.models import PaperDeconstruction
 from app.services.document_structure import DocumentStructureService
 from app.storage.neo4j_sync import Neo4jSynchronizer
-from app.storage.repository import DatabaseIngestResult, GraphSyncStatus, PaperRepository
+from app.storage.repository import (
+    DatabaseIngestResult,
+    GraphSyncStatus,
+    PaperRepository,
+    PaperSourceIngestResult,
+)
 
 
 @dataclass(frozen=True)
@@ -14,6 +19,7 @@ class IngestionResult:
     database_action: str
     graph_status: GraphSyncStatus | Literal["not_requested"]
     committed: bool
+    source_actions: tuple[PaperSourceIngestResult, ...] = ()
     error: str | None = None
 
     @property
@@ -70,16 +76,25 @@ class GoldInfrastructureIngestor:
             raise ValueError(f"missing document structure for {record.paper_id}")
 
         if not commit:
-            database_result = self._repository.plan(record, structure, dataset.manifest)
+            database_result = self._repository.plan(
+                record,
+                structure,
+                dataset.manifest,
+                dataset.sources_for(record.paper_id),
+            )
             return IngestionResult(
                 paper_id=record.paper_id,
                 database_action=database_result.action,
                 graph_status="not_requested",
                 committed=False,
+                source_actions=database_result.source_actions,
             )
 
         database_result: DatabaseIngestResult = self._repository.upsert(
-            record, structure, dataset.manifest
+            record,
+            structure,
+            dataset.manifest,
+            dataset.sources_for(record.paper_id),
         )
         should_sync = synchronize_graph and (
             force_graph
@@ -91,6 +106,7 @@ class GoldInfrastructureIngestor:
                 database_action=database_result.action,
                 graph_status=database_result.graph_status,
                 committed=True,
+                source_actions=database_result.source_actions,
             )
 
         assert self._graph is not None
@@ -109,6 +125,7 @@ class GoldInfrastructureIngestor:
                 database_action=database_result.action,
                 graph_status="failed",
                 committed=True,
+                source_actions=database_result.source_actions,
                 error=error,
             )
 
@@ -119,6 +136,7 @@ class GoldInfrastructureIngestor:
                 database_action=database_result.action,
                 graph_status="failed",
                 committed=True,
+                source_actions=database_result.source_actions,
                 error=error,
             )
         return IngestionResult(
@@ -126,4 +144,5 @@ class GoldInfrastructureIngestor:
             database_action=database_result.action,
             graph_status="synced",
             committed=True,
+            source_actions=database_result.source_actions,
         )

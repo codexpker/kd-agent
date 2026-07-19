@@ -69,6 +69,13 @@ python -m app.cli.ingest_gold --commit --sync-neo4j
 
 `--sync-neo4j`或`--force-graph-sync`未同时提供`--commit`时命令直接拒绝执行。
 
+Gold清单中的`PaperSource`元数据与Gold实体在同一MySQL事务内写入。每个来源使用稳定
+`source_key`独立保存；同键更新按以下规则处理：官方出版源、人工维护注册表、OpenReview、
+Crossref、arXiv、OpenAlex、模型抽取依次降级；更高质量来源可以替换，质量相同时只有
+`retrieved_at`严格更新的候选可以替换，低质量或过期候选在CLI中显示为`protected`。
+不同来源不会互相删除，`is_primary`按质量、时间和稳定键确定。`access_policy=metadata_only`
+仅表示可保存元数据，不能作为PDF全文持久化授权。
+
 使用 MySQL 文档结构读模型时，将 `.env` 中的配置切换为：
 
 ```dotenv
