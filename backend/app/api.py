@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.config import get_settings
 from app.gold_dataset import get_gold_dataset
 from app.models import DocumentStructure, PaperDeconstruction, SearchRequest, SearchResponse
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
@@ -29,8 +31,20 @@ def deconstruct(paper_id: str) -> PaperDeconstruction:
 
 @router.get("/papers/{paper_id}/document-structure", response_model=DocumentStructure)
 def document_structure(paper_id: str) -> DocumentStructure:
-    result = DocumentStructureService(get_gold_dataset()).get_gold_snapshot(paper_id)
+    settings = get_settings()
+    repository = None
+    if settings.document_structure_backend == "mysql":
+        from app.storage.runtime import get_paper_repository
+
+        repository = get_paper_repository(settings.mysql_url)
+    try:
+        result = DocumentStructureService(get_gold_dataset(), repository).get(
+            paper_id, settings.document_structure_backend
+        )
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail="Document structure backend unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="No document structure for this paper")
     return result
-

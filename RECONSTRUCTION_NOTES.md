@@ -18,10 +18,15 @@
 ## 未从旧提交恢复、需要继续实现
 
 - Alembic `0001–0006` 的原始迁移历史。
-- Gold→MySQL 幂等写入和 Neo4j 同步的原实现。
-- MySQL 文档结构读模型原实现。
 - GROBID TEI 与 MinerU JSON 的完整字段映射。
 - 五篇真实 PDF 版面真值与解析器正式评测结果。
 
-继续开发时以 `docs/ROADMAP.md` 为准，先建立新的迁移基线，不要伪造旧 Git 提交号。
+## R2 重建进展
 
+- 已建立新的 `0001_reconstructed` → `0002_reconstructed_authority` 迁移链，没有冒充旧 `0001–0006` 历史。
+- `0002_reconstructed_authority` 建立Paper、PaperSource、GoldDatasetVersion、PaperGoldRecord、NarrativeMove、Claim、ExperimentIntent、ArtifactRole、EvidenceAnchor、Limitation及闭合关系表。
+- 已在SQLite验证空库升级、降级和再升级，并在Docker Desktop + WSL2的MySQL 8.4上完成真实迁移和外键检查。
+- Gold CLI现已默认dry-run，只有显式`--commit`才按`paper_id + dataset_version`事务性写入或替换规范化派生对象；MySQL失败不会调用Neo4j，图失败返回`partial`并记录`failed`。
+- 更高质量或更新PaperSource元数据的防覆盖规则仍待后续完成，不在本轮Step 2范围内。
+
+继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

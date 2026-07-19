@@ -6,8 +6,13 @@ services:
       MYSQL_USER: kd_agent
       MYSQL_PASSWORD: kd_agent_local
       MYSQL_ROOT_PASSWORD: kd_agent_root_local
-    ports: ["3306:3306"]
+    ports: ["${MYSQL_PORT:-3306}:3306"]
     volumes: ["mysql_data:/var/lib/mysql"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pkd_agent_root_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   etcd:
     image: quay.io/coreos/etcd:v3.5.18
@@ -36,8 +41,12 @@ services:
       NEO4J_AUTH: neo4j/kd_agent_graph_local
     ports: ["7474:7474", "7687:7687"]
     volumes: ["neo4j_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p kd_agent_graph_local 'RETURN 1' || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
 
 volumes:
   mysql_data:
   neo4j_data:
-

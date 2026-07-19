@@ -1,10 +1,30 @@
+from typing import Protocol
+
 from app.gold_dataset import GoldDataset
 from app.models import DocumentArtifact, DocumentStructure, Section
 
 
+class DocumentStructureRepository(Protocol):
+    def get_document_structure(self, paper_id: str) -> DocumentStructure | None: ...
+
+
 class DocumentStructureService:
-    def __init__(self, dataset: GoldDataset) -> None:
+    def __init__(
+        self,
+        dataset: GoldDataset,
+        repository: DocumentStructureRepository | None = None,
+    ) -> None:
         self.dataset = dataset
+        self.repository = repository
+
+    def get(self, paper_id: str, backend: str = "gold") -> DocumentStructure | None:
+        if backend == "gold":
+            return self.get_gold_snapshot(paper_id)
+        if backend == "mysql":
+            if self.repository is None:
+                raise RuntimeError("MySQL document backend is not configured")
+            return self.repository.get_document_structure(paper_id)
+        raise ValueError(f"unsupported document structure backend: {backend}")
 
     def get_gold_snapshot(self, paper_id: str) -> DocumentStructure | None:
         record = self.dataset.get(paper_id)
@@ -49,4 +69,3 @@ class DocumentStructureService:
                 "Missing page, caption, bbox and body-reference fields are intentionally null.",
             ],
         )
-

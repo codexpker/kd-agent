@@ -36,5 +36,15 @@ cd backend && python -m pytest
 cd frontend && npm run build
 ```
 
-详细说明见 `docs/LOCAL_DEVELOPMENT.md` 与 `docs/ROADMAP.md`。
+R2 的 MySQL/Neo4j 验收需要 Docker 与基础设施依赖：
 
+```bash
+python -m pip install -e './backend[dev,infra]'
+docker compose up -d --wait mysql neo4j
+cd backend
+python -m app.cli.r2_acceptance
+```
+
+验收命令会应用新的重建迁移链，连续执行两次Gold→MySQL规范化实体与Neo4j同步，并检查第二次MySQL写入为`unchanged`、图中节点数不增长。它只导入已完成的开发记录，`queued`论文仍不会入库。日常运行`python -m app.cli.ingest_gold`默认为零写入dry-run；只有增加`--commit`才写MySQL。
+
+详细说明见 `docs/LOCAL_DEVELOPMENT.md` 与 `docs/ROADMAP.md`。

@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     embedding_backend: str = "hash"
     document_structure_backend: str = "gold"
     cors_origins: str = "http://localhost:5173"
+    mysql_url: str = "mysql+pymysql://kd_agent:kd_agent_local@127.0.0.1:3306/kd_agent"
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
+    neo4j_username: str = "neo4j"
+    neo4j_password: str = "kd_agent_graph_local"
 
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),
@@ -25,4 +29,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
