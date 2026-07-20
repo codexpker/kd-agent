@@ -1,69 +1,218 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-type Evidence = { id: string; kind: string; label: string; excerpt: string; page: number | null; verified: boolean }
-type NarrativeMove = { id: string; order: number; move: string; purpose: string; evidence_ids: string[] }
-type Claim = { id: string; claim_type: string; statement: string; evidence_ids: string[] }
-type Experiment = { id: string; title: string; question: string; design_reason: string; variables: string[]; supports_claim_ids: string[]; evidence_ids: string[] }
-type Artifact = { id: string; artifact_type: string; label: string; role: string; why_here: string; supports_claim_ids: string[]; evidence_ids: string[] }
-type Paper = { title: string; venue: string; year: number; status: string; narrative_moves: NarrativeMove[]; claims: Claim[]; experiment_intents: Experiment[]; artifacts: Artifact[]; evidence: Evidence[]; limitations: string[] }
-type SearchHit = { paper_id: string; title: string; year: number; venue: string; snippet: string; has_gold: boolean }
-type Structure = { source: string; sections: { id: string; title: string; page_start: number | null }[]; artifacts: { id: string; label: string; artifact_type: string; page: number | null; caption: string | null }[]; warnings: string[] }
+type Evidence = {
+  id: string
+  kind: string
+  label: string
+  excerpt: string
+  page: number | null
+  verified: boolean
+}
+type Paper = {
+  paper_id: string
+  title: string
+  venue: string
+  year: number
+  status: string
+  narrative_moves: { id: string; order: number; move: string; purpose: string; evidence_ids: string[] }[]
+  claims: { id: string; claim_type: string; statement: string; evidence_ids: string[] }[]
+  experiment_intents: {
+    id: string
+    title: string
+    question: string
+    design_reason: string
+    variables: string[]
+    evidence_ids: string[]
+  }[]
+  artifacts: {
+    id: string
+    artifact_type: string
+    label: string
+    role: string
+    why_here: string
+    evidence_ids: string[]
+  }[]
+  limitations: string[]
+  evidence: Evidence[]
+}
+type DocumentStructure = {
+  source: string
+  sections: { id: string; title: string; level: number; page_start: number | null }[]
+  artifacts: {
+    id: string
+    label: string
+    artifact_type: string
+    page: number | null
+    caption: string | null
+  }[]
+  warnings: string[]
+}
+type SearchHit = {
+  paper_id: string
+  title: string
+  year: number
+  venue: string
+  snippet: string
+  has_gold: boolean
+}
+type OpportunityEvidence = {
+  paper_id: string
+  paper_title: string
+  year: number
+  source_statement: string
+  relation: 'supporting' | 'conflicting'
+  evidence_anchor: Evidence
+  matched_rule_terms: string[]
+}
+type Candidate = {
+  candidate_id: string
+  candidate_type: string
+  topic_key: string
+  problem_description: string
+  evidence_paper_count: number
+  supporting_evidence: OpportunityEvidence[]
+  conflicting_evidence: OpportunityEvidence[]
+  conflict_evidence_note: string
+  corpus_coverage: {
+    corpus_id: string
+    retrieved_paper_count: number
+    included_evidence_paper_count: number
+    year_from: number | null
+    year_to: number | null
+    venues: string[]
+  }
+  confidence: { score: number; level: string; calculation: string; basis: string[] }
+  human_confirmation_required: string[]
+  applicable_conditions: string[]
+  prohibited_conclusions: string[]
+}
+type OpportunityResponse = {
+  status: 'ok' | 'insufficient_evidence'
+  result_label: string
+  disclaimer: string
+  message: string
+  query_plan: {
+    query: string
+    steps: string[]
+    inclusion_rules: string[]
+    exclusion_rules: string[]
+    possible_omissions: string[]
+    selections: {
+      paper_id: string
+      title: string
+      year: number
+      status: string
+      decision: string
+      reason: string
+    }[]
+    coverage: {
+      corpus_id: string
+      retrieved_paper_count: number
+      included_evidence_paper_count: number
+      year_from: number | null
+      year_to: number | null
+    }
+  }
+  progress_map: {
+    milestone_id: string
+    year: number
+    title: string
+    paper_id: string
+    venue: string
+    summary: string
+    evidence_anchors: Evidence[]
+  }[]
+  candidates: Candidate[]
+}
 
-const query = ref('Transformer 在多变量时间序列异常检测中的研究进展')
+const searchQuery = ref('time series anomaly detection')
+const opportunityQuery = ref('time series anomaly detection')
+const yearFrom = ref<number | null>(null)
+const yearTo = ref<number | null>(null)
 const hits = ref<SearchHit[]>([])
 const paper = ref<Paper | null>(null)
-const structure = ref<Structure | null>(null)
+const structure = ref<DocumentStructure | null>(null)
 const selectedEvidence = ref<Evidence | null>(null)
-const activeTab = ref<'narrative' | 'experiments' | 'artifacts'>('narrative')
-const loading = ref(false)
+const opportunity = ref<OpportunityResponse | null>(null)
+const loadingSearch = ref(false)
+const loadingOpportunity = ref(false)
 const error = ref('')
 
-const evidenceMap = computed(() => new Map((paper.value?.evidence ?? []).map(item => [item.id, item])))
+const evidenceMap = computed(
+  () => new Map((paper.value?.evidence ?? []).map((item) => [item.id, item])),
+)
 
 async function search() {
-  loading.value = true
+  loadingSearch.value = true
   error.value = ''
   try {
-    const response = await fetch('/api/v1/tools/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: query.value, limit: 5 }) })
-    if (!response.ok) throw new Error('检索接口暂时不可用')
+    const response = await fetch('/api/v1/tools/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: searchQuery.value, limit: 5 }),
+    })
+    if (!response.ok) throw new Error('检索接口暂时不可用。')
     hits.value = (await response.json()).hits
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '未知错误'
   } finally {
-    loading.value = false
+    loadingSearch.value = false
   }
 }
 
 async function selectPaper(hit: SearchHit) {
   if (!hit.has_gold) return
-  loading.value = true
+  error.value = ''
+  const [paperResponse, structureResponse] = await Promise.all([
+    fetch(`/api/v1/tools/paper-deconstruct/${hit.paper_id}`, { method: 'POST' }),
+    fetch(`/api/v1/papers/${hit.paper_id}/document-structure`),
+  ])
+  if (!paperResponse.ok) {
+    error.value = '这篇论文尚无可公开加载的深度记录。'
+    return
+  }
+  paper.value = await paperResponse.json()
+  structure.value = structureResponse.ok ? await structureResponse.json() : null
+  selectedEvidence.value = paper.value?.evidence[0] ?? null
+}
+
+function inspectEvidence(evidenceIds: string[]) {
+  selectedEvidence.value = evidenceMap.value.get(evidenceIds[0]) ?? null
+  document.querySelector('#paper-evidence')?.scrollIntoView({ behavior: 'smooth' })
+}
+
+async function analyzeOpportunities() {
+  loadingOpportunity.value = true
   error.value = ''
   try {
-    const [paperResponse, structureResponse] = await Promise.all([
-      fetch(`/api/v1/tools/paper-deconstruct/${hit.paper_id}`, { method: 'POST' }),
-      fetch(`/api/v1/papers/${hit.paper_id}/document-structure`),
-    ])
-    if (!paperResponse.ok) throw new Error('这篇论文尚无已审核的深度记录')
-    paper.value = await paperResponse.json()
-    structure.value = structureResponse.ok ? await structureResponse.json() : null
-    selectedEvidence.value = paper.value?.evidence[0] ?? null
+    const payload: Record<string, string | number> = {
+      query: opportunityQuery.value,
+      minimum_evidence_papers: 2,
+    }
+    if (typeof yearFrom.value === 'number' && Number.isFinite(yearFrom.value)) {
+      payload.year_from = yearFrom.value
+    }
+    if (typeof yearTo.value === 'number' && Number.isFinite(yearTo.value)) {
+      payload.year_to = yearTo.value
+    }
+    const response = await fetch('/api/v1/research/opportunities', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) throw new Error('研究机会分析请求无效或暂时不可用。')
+    opportunity.value = await response.json()
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '未知错误'
   } finally {
-    loading.value = false
+    loadingOpportunity.value = false
   }
 }
 
-async function inspectEvidence(ids: string[]) {
-  selectedEvidence.value = evidenceMap.value.get(ids[0]) ?? null
-  await nextTick()
-  document.querySelector('#evidence-lens')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-
 onMounted(async () => {
-  await search()
-  const first = hits.value.find(item => item.has_gold)
+  await Promise.all([search(), analyzeOpportunities()])
+  const first = hits.value.find((item) => item.has_gold)
   if (first) await selectPaper(first)
 })
 </script>
@@ -71,56 +220,186 @@ onMounted(async () => {
 <template>
   <div class="shell">
     <header class="topbar">
-      <a class="brand" href="#">KD<span>·</span>Agent</a>
-      <nav><a href="#workspace">论文拆解</a><a href="#evidence-lens">证据透镜</a><span class="status"><i></i> 离线 Gold</span></nav>
+      <a class="brand" href="#top">KD<span>·</span>Agent</a>
+      <nav>
+        <a href="#papers">论文拆解</a>
+        <a href="#opportunities">研究进展与机会</a>
+        <span class="status"><i></i> 离线证据模式</span>
+      </nav>
     </header>
 
-    <main>
+    <main id="top">
       <section class="hero">
-        <div class="eyebrow">EVIDENCE-GROUNDED RESEARCH COPILOT</div>
-        <h1>别只读结论，<br><em>看懂论文如何证明。</em></h1>
-        <p>从 Problem 到 Evidence，拆开论文的叙事、实验与图表。系统显示证据边界，不把候选方向伪装成确定创新。</p>
+        <p class="eyebrow">EVIDENCE-GROUNDED RESEARCH COPILOT</p>
+        <h1>从论文证据出发，<br /><em>寻找值得验证的问题。</em></h1>
+        <p class="hero-copy">
+          系统只输出 Research Opportunity Candidate，不会把候选声明为已确认创新。证据不足时会明确停止。
+        </p>
         <form class="searchbox" @submit.prevent="search">
-          <span>⌕</span><input v-model="query" aria-label="研究主题" /><button :disabled="loading">{{ loading ? '分析中' : '开始研究' }}</button>
+          <span>⌕</span>
+          <input v-model="searchQuery" aria-label="论文检索主题" />
+          <button :disabled="loadingSearch">{{ loadingSearch ? '检索中' : '检索论文' }}</button>
         </form>
         <p v-if="error" class="error">{{ error }}</p>
       </section>
 
-      <section class="results" aria-label="检索结果">
-        <article v-for="hit in hits" :key="hit.paper_id" class="paper-hit" :class="{ disabled: !hit.has_gold }" @click="selectPaper(hit)">
-          <div><span class="year">{{ hit.year }}</span><span>{{ hit.venue }}</span></div>
-          <h3>{{ hit.title }}</h3><p>{{ hit.snippet }}</p>
-          <b>{{ hit.has_gold ? '打开深度拆解 →' : '标注队列中' }}</b>
+      <section id="papers" class="paper-results" aria-label="论文检索结果">
+        <article
+          v-for="hit in hits"
+          :key="hit.paper_id"
+          class="paper-hit"
+          :class="{ disabled: !hit.has_gold }"
+          @click="selectPaper(hit)"
+        >
+          <div class="paper-meta"><span>{{ hit.year }}</span><span>{{ hit.venue }}</span></div>
+          <h3>{{ hit.title }}</h3>
+          <p>{{ hit.snippet }}</p>
+          <b>{{ hit.has_gold ? '查看证据拆解 →' : '等待审核，不参与机会分析' }}</b>
         </article>
       </section>
 
-      <section v-if="paper" id="workspace" class="workspace">
-        <div class="section-head"><div><span class="kicker">PAPER DECONSTRUCTION</span><h2>{{ paper.title }}</h2><p>{{ paper.venue }} · {{ paper.year }} · 开发种子（尚未冻结）</p></div><div class="chain">Problem <span>→</span> Gap <span>→</span> Claim <span>→</span> Experiment <span>→</span> Evidence</div></div>
-
-        <div class="tabs"><button :class="{ active: activeTab === 'narrative' }" @click="activeTab = 'narrative'">叙事链</button><button :class="{ active: activeTab === 'experiments' }" @click="activeTab = 'experiments'">实验意图</button><button :class="{ active: activeTab === 'artifacts' }" @click="activeTab = 'artifacts'">图表角色</button></div>
-
-        <div v-if="activeTab === 'narrative'" class="timeline">
-          <article v-for="move in paper.narrative_moves" :key="move.id"><span class="step">{{ String(move.order).padStart(2, '0') }}</span><div><h3>{{ move.move }}</h3><p>{{ move.purpose }}</p><button @click="inspectEvidence(move.evidence_ids)">查看证据 {{ move.evidence_ids.join(', ') }}</button></div></article>
+      <section v-if="paper" class="paper-workspace">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PAPER DECONSTRUCTION</p>
+            <h2>{{ paper.title }}</h2>
+            <p>{{ paper.venue }} · {{ paper.year }} · {{ paper.status }}</p>
+          </div>
+          <span class="boundary-pill">开发种子，不是冻结 Gold</span>
         </div>
-
-        <div v-else-if="activeTab === 'experiments'" class="card-grid">
-          <article v-for="item in paper.experiment_intents" :key="item.id" class="intent-card"><span class="tag">RESEARCH QUESTION</span><h3>{{ item.title }}</h3><strong>{{ item.question }}</strong><p>{{ item.design_reason }}</p><div class="chips"><span v-for="v in item.variables" :key="v">{{ v }}</span></div><button @click="inspectEvidence(item.evidence_ids)">检查支撑证据 →</button></article>
+        <div class="narrative-list">
+          <article v-for="move in paper.narrative_moves" :key="move.id">
+            <span>{{ String(move.order).padStart(2, '0') }}</span>
+            <div><h3>{{ move.move }}</h3><p>{{ move.purpose }}</p></div>
+            <button @click="inspectEvidence(move.evidence_ids)">证据 {{ move.evidence_ids.join(', ') }}</button>
+          </article>
         </div>
-
-        <div v-else class="card-grid artifacts">
-          <article v-for="item in paper.artifacts" :key="item.id" class="intent-card"><span class="tag">{{ item.label }}</span><h3>{{ item.role }}</h3><p>{{ item.why_here }}</p><button @click="inspectEvidence(item.evidence_ids)">为什么放在这里？ →</button></article>
+        <div class="paper-fact-grid">
+          <section>
+            <h3>实验意图</h3>
+            <article v-for="item in paper.experiment_intents" :key="item.id">
+              <b>{{ item.title }}</b>
+              <p>{{ item.question }}</p>
+              <button @click="inspectEvidence(item.evidence_ids)">检查支撑证据</button>
+            </article>
+          </section>
+          <section>
+            <h3>Figure / Table 角色</h3>
+            <article v-for="item in paper.artifacts" :key="item.id">
+              <b>{{ item.label }} · {{ item.role }}</b>
+              <p>{{ item.why_here }}</p>
+              <button @click="inspectEvidence(item.evidence_ids)">检查支撑证据</button>
+            </article>
+          </section>
         </div>
+        <section v-if="structure" class="structure-summary">
+          <header>
+            <div><h3>文档结构</h3><p>查询来源：{{ structure.source }}</p></div>
+            <span>{{ structure.artifacts.length }} 个版面图表事实</span>
+          </header>
+          <ol>
+            <li v-for="section in structure.sections" :key="section.id">
+              <span>H{{ section.level }}</span>
+              <b>{{ section.title }}</b>
+              <small>{{ section.page_start ? `p.${section.page_start}` : '未提供真实页码' }}</small>
+            </li>
+          </ol>
+          <p v-for="warning in structure.warnings" :key="warning" class="structure-warning">
+            {{ warning }}
+          </p>
+        </section>
+        <aside v-if="selectedEvidence" id="paper-evidence" class="paper-evidence">
+          <div><b>{{ selectedEvidence.kind }}</b><span>{{ selectedEvidence.verified ? '已核验' : '待核验' }}</span></div>
+          <h3>{{ selectedEvidence.label }}</h3>
+          <blockquote>{{ selectedEvidence.excerpt }}</blockquote>
+          <p>页码：{{ selectedEvidence.page ?? '尚未由授权 PDF 核验' }}</p>
+        </aside>
       </section>
 
-      <section v-if="paper" id="evidence-lens" class="evidence-lens">
-        <div class="lens-nav"><span class="kicker">LAYOUT EVIDENCE LENS</span><h2>证据不是装饰，<br>它决定结论的边界。</h2><div class="section-list"><button v-for="section in structure?.sections" :key="section.id">{{ section.title }} <span>{{ section.page_start ? `p.${section.page_start}` : '页码待解析' }}</span></button></div></div>
-        <article v-if="selectedEvidence" class="evidence-card"><div class="evidence-meta"><span>{{ selectedEvidence.kind }}</span><span>{{ selectedEvidence.page ? `PAGE ${selectedEvidence.page}` : 'PAGE NOT VERIFIED' }}</span></div><h3>{{ selectedEvidence.label }}</h3><blockquote>{{ selectedEvidence.excerpt }}</blockquote><div class="warning">△ 当前为 Gold 语义快照。只有合法全文完成解析和人工复核后，才会显示真实页码、bbox、图注与正文引用。</div></article>
-      </section>
+      <section id="opportunities" class="opportunity-section">
+        <div class="opportunity-intro">
+          <p class="eyebrow">RESEARCH PROGRESS & OPPORTUNITY CANDIDATES</p>
+          <h2>把检索范围、证据冲突和未知项一起摆出来。</h2>
+          <p>
+            候选由确定性规则和已核验 EvidenceAnchor 生成。当前语料覆盖不足时，不会用排队论文或合成数据补齐。
+          </p>
+        </div>
 
-      <section v-if="paper" class="claims"><span class="kicker">CLAIM AUDIT</span><h2>主张与边界</h2><div class="claim-list"><article v-for="claim in paper.claims" :key="claim.id"><span>{{ claim.claim_type }}</span><p>{{ claim.statement }}</p><button @click="inspectEvidence(claim.evidence_ids)">证据 {{ claim.evidence_ids.join(' · ') }}</button></article></div><div class="limits"><h3>仍需人工确认</h3><ul><li v-for="item in paper.limitations" :key="item">{{ item }}</li></ul></div></section>
+        <form class="opportunity-form" @submit.prevent="analyzeOpportunities">
+          <label>研究问题<input v-model="opportunityQuery" /></label>
+          <label>起始年份<input v-model.number="yearFrom" type="number" min="1900" max="2100" placeholder="不限" /></label>
+          <label>结束年份<input v-model.number="yearTo" type="number" min="1900" max="2100" placeholder="不限" /></label>
+          <button :disabled="loadingOpportunity">{{ loadingOpportunity ? '分析中' : '运行证据分析' }}</button>
+        </form>
+
+        <template v-if="opportunity">
+          <div class="result-state" :class="opportunity.status">
+            <span>{{ opportunity.status }}</span>
+            <strong>{{ opportunity.message }}</strong>
+            <p>{{ opportunity.disclaimer }}</p>
+          </div>
+
+          <section class="query-plan">
+            <div class="plan-header">
+              <div><p class="eyebrow">QUERY PLAN</p><h3>查询计划与语料边界</h3></div>
+              <div class="coverage-stats">
+                <span><b>{{ opportunity.query_plan.coverage.retrieved_paper_count }}</b> 注册论文</span>
+                <span><b>{{ opportunity.query_plan.coverage.included_evidence_paper_count }}</b> 纳入证据论文</span>
+                <span><b>{{ opportunity.query_plan.coverage.year_from ?? '—' }}–{{ opportunity.query_plan.coverage.year_to ?? '—' }}</b> 年份覆盖</span>
+              </div>
+            </div>
+            <div class="plan-columns">
+              <div><h4>执行步骤</h4><ol><li v-for="item in opportunity.query_plan.steps" :key="item">{{ item }}</li></ol></div>
+              <div><h4>纳入规则</h4><ul><li v-for="item in opportunity.query_plan.inclusion_rules" :key="item">{{ item }}</li></ul></div>
+              <div><h4>排除规则</h4><ul><li v-for="item in opportunity.query_plan.exclusion_rules" :key="item">{{ item }}</li></ul></div>
+            </div>
+            <div class="selection-list">
+              <article v-for="item in opportunity.query_plan.selections" :key="item.paper_id">
+                <span :class="item.decision">{{ item.decision }}</span>
+                <div><b>{{ item.title }}</b><p>{{ item.year }} · {{ item.status }} · {{ item.reason }}</p></div>
+              </article>
+            </div>
+            <details><summary>可能遗漏</summary><ul><li v-for="item in opportunity.query_plan.possible_omissions" :key="item">{{ item }}</li></ul></details>
+          </section>
+
+          <section class="progress-section">
+            <p class="eyebrow">READABLE PROGRESS MAP</p>
+            <h3>研究进展地图</h3>
+            <div v-if="opportunity.progress_map.length" class="progress-map">
+              <article v-for="item in opportunity.progress_map" :key="item.milestone_id">
+                <span class="progress-year">{{ item.year }}</span>
+                <div><small>{{ item.venue }} · {{ item.paper_id }}</small><h4>{{ item.title }}</h4><p>{{ item.summary }}</p><b>EvidenceAnchor: {{ item.evidence_anchors.map((anchor) => anchor.id).join(', ') }}</b></div>
+              </article>
+            </div>
+            <p v-else class="empty-map">没有达到纳入规则的论文，因此不绘制虚假的研究进展节点。</p>
+          </section>
+
+          <section class="candidate-section">
+            <p class="eyebrow">CANDIDATE LIST</p>
+            <h3>Research Opportunity Candidates</h3>
+            <div v-if="opportunity.candidates.length" class="candidate-list">
+              <article v-for="candidate in opportunity.candidates" :key="candidate.candidate_id" class="candidate-card">
+                <header><span>Research Opportunity Candidate</span><b>{{ candidate.candidate_type }}</b></header>
+                <h4>{{ candidate.problem_description }}</h4>
+                <div class="candidate-stats"><span>{{ candidate.evidence_paper_count }} 篇证据论文</span><span>置信度 {{ candidate.confidence.score.toFixed(3) }} / {{ candidate.confidence.level }}</span><span>{{ candidate.corpus_coverage.year_from }}–{{ candidate.corpus_coverage.year_to }}</span></div>
+                <div class="evidence-columns">
+                  <section><h5>支持证据</h5><article v-for="item in candidate.supporting_evidence" :key="`${item.paper_id}-${item.evidence_anchor.id}`"><b>{{ item.paper_title }} · {{ item.year }}</b><p>{{ item.source_statement }}</p><small>{{ item.evidence_anchor.id }} · {{ item.evidence_anchor.label }}</small></article></section>
+                  <section><h5>反对或冲突证据</h5><article v-for="item in candidate.conflicting_evidence" :key="`${item.paper_id}-${item.evidence_anchor.id}`"><b>{{ item.paper_title }} · {{ item.year }}</b><p>{{ item.source_statement }}</p><small>{{ item.evidence_anchor.id }} · {{ item.evidence_anchor.label }}</small></article><p v-if="!candidate.conflicting_evidence.length">{{ candidate.conflict_evidence_note }}</p></section>
+                </div>
+                <div class="candidate-boundaries">
+                  <section><h5>置信度依据</h5><p>{{ candidate.confidence.calculation }}</p><ul><li v-for="item in candidate.confidence.basis" :key="item">{{ item }}</li></ul></section>
+                  <section><h5>仍需人工确认</h5><ul><li v-for="item in candidate.human_confirmation_required" :key="item">{{ item }}</li></ul></section>
+                  <section><h5>适用条件</h5><ul><li v-for="item in candidate.applicable_conditions" :key="item">{{ item }}</li></ul></section>
+                  <section><h5>不能得出的结论</h5><ul><li v-for="item in candidate.prohibited_conclusions" :key="item">{{ item }}</li></ul></section>
+                </div>
+              </article>
+            </div>
+            <p v-else class="empty-candidates">当前没有满足至少两篇已审核、已核验证据论文覆盖的候选。</p>
+          </section>
+        </template>
+      </section>
     </main>
 
-    <footer><span>KD·Agent / Reconstructed handoff</span><span>Trace claims. Inspect evidence. Respect boundaries.</span></footer>
+    <footer><span>KD·Agent / reconstructed evidence baseline</span><span>Candidate ≠ confirmed innovation</span></footer>
   </div>
 </template>
-

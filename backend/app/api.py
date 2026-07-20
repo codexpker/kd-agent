@@ -3,8 +3,10 @@ from fastapi import APIRouter, HTTPException
 from app.config import get_settings
 from app.gold_dataset import get_gold_dataset
 from app.models import DocumentStructure, PaperDeconstruction, SearchRequest, SearchResponse
+from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
 from app.services.document_structure import DocumentStructureService
+from app.services.research_opportunities import ResearchOpportunityService
 from app.services.search import DemoSearchService
 
 router = APIRouter(prefix="/api/v1")
@@ -18,6 +20,15 @@ def healthz() -> dict:
 @router.post("/tools/search", response_model=SearchResponse)
 def search(request: SearchRequest) -> SearchResponse:
     return DemoSearchService(get_gold_dataset()).search(request.query, request.limit)
+
+
+@router.post(
+    "/research/opportunities", response_model=ResearchOpportunityResponse
+)
+def research_opportunities(
+    request: ResearchOpportunityRequest,
+) -> ResearchOpportunityResponse:
+    return ResearchOpportunityService(get_gold_dataset()).analyze(request)
 
 
 @router.post("/tools/paper-deconstruct/{paper_id}", response_model=PaperDeconstruction)

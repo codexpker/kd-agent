@@ -289,6 +289,28 @@ DOCUMENT_STRUCTURE_BACKEND=mysql
 MYSQL_PORT=3307 MYSQL_URL=mysql+pymysql://kd_agent:kd_agent_local@127.0.0.1:3307/kd_agent docker compose up -d --wait mysql neo4j
 ```
 
+## R3 研究进展与候选研究机会
+
+离线 API 使用本地 Gold 注册表，不会调用外部检索服务，也不会把排队记录、开发种子或未核验
+EvidenceAnchor 当作研究证据：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/research/opportunities \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"time series anomaly detection","year_from":2019,"year_to":2024,"minimum_evidence_papers":2}'
+```
+
+响应包含`query_plan`、线性`progress_map`和`candidates`。`query_plan`列出查询步骤、纳入/排除
+规则、逐论文选择理由、年份覆盖和可能遗漏。候选只能由规则匹配到的已核验 EvidenceAnchor 产生，
+并包含支持/冲突证据、不同论文数量、置信度计算、人工确认事项、适用条件和禁止结论。置信度上限
+为0.85，表示当前证据覆盖与一致性，不是新颖性概率，也不证明优先权、可行性或必然贡献。
+
+当前仓库真实离线清单有5篇注册论文，但0篇同时达到`double_annotated/frozen`和已核验证据要求，
+所以默认请求返回HTTP 200、`status=insufficient_evidence`和空候选。八类规则的正向输出仅由
+`synthetic-opportunity-fixture`测试数据验证；该 fixture 不参与运行时语料，也不是实际论文分析成绩。
+前端在`http://127.0.0.1:5173/#opportunities`展示同一查询计划、证据列表和时间线，不绘制知识
+图谱大球。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。

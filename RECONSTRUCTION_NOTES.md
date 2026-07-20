@@ -32,4 +32,11 @@
 - 已建立三解析器统一映射与评测框架：适配器只产出`ParsedDocument`，GROBID TEI和MinerU JSON已覆盖章节、层级、页码/bbox、图表/图注、正文引用及结构化表格字段；数据库写入仍由独立服务负责。`layout-gold-v1`要求显式区分真实仲裁Gold与`synthetic_smoke_test`，并输出JSON和Markdown七类指标。内置满分样例只验证程序闭合，不是实际解析质量结论。
 - 已审计Anomaly Transformer首篇真实版面Gold前置条件：初次审计无PDF；随后用户指定了被Git忽略的本地候选PDF，但尚未确认权利依据和来源记录。MySQL仍无该论文`PdfSource`，现有PaperSource仅允许元数据且未确认全文权利，也未登记第二标注员。案例清单同时标记`needs_authorized_pdf`与`needs_second_annotator`。已提供授权后哈希/来源记录、独立空白标注、候选结果规范化导入、字段级差异和全未决仲裁模板；在合法PDF、双人标注和仲裁到位前不生成或声称真实Gold。
 
+## R3 重建进展
+
+- 需要全文权利确认、第二标注员和仲裁员的版面Gold工作已按排期后推；5篇TAD Gold和正式多论文比较矩阵仍未完成，不能用开发种子替代。
+- 已实现基于本地已检索论文和版本化结构规则的 Research Opportunity Candidate API。规则覆盖八类研究缺口，每项输出支持/冲突证据及完整EvidenceAnchor、不同论文覆盖、检索年份范围、可复算置信度依据、人工确认事项、适用条件和禁止结论。
+- 查询计划显式报告纳入/排除规则、逐论文决定与可能遗漏；只有`double_annotated/frozen`且引用已核验EvidenceAnchor的论文可以参与。未达到最少不同论文覆盖时返回`insufficient_evidence`，不会用合成记录或排队论文补足。
+- Vue工作台展示证据列表与线性研究进展时间线，不使用知识图谱大球。八类规则正向路径目前只由明确标记的`synthetic-opportunity-fixture`测试验证；真实离线清单当前为5篇注册、0篇纳入，因此没有真实候选或真实研究机会成绩。
+
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。
