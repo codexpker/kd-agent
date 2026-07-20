@@ -1,0 +1,70 @@
+{
+  "schema_version": "layout-gold-v1",
+  "evaluation_id": "synthetic-layout-smoke-v1",
+  "evaluation_kind": "synthetic_smoke_test",
+  "paper_id": "synthetic-layout-paper",
+  "file_sha256": "ae8b58e8c16440d3e9a5f4cbc5e35e6038f566283519c04ed22894975cb61f7a",
+  "page_count": 2,
+  "source_rights_basis": "synthetic_generated",
+  "annotation_status": "synthetic_generated",
+  "annotators": [],
+  "annotation_notes": "Program-level smoke fixture. It is not a real paper and not a parser benchmark score.",
+  "sections": [
+    {
+      "id": "gold-sec-intro",
+      "title": "Introduction",
+      "level": 1,
+      "page_start": 1,
+      "page_end": 1,
+      "heading_bbox": [50, 60, 170, 78]
+    },
+    {
+      "id": "gold-sec-method",
+      "title": "Method",
+      "level": 1,
+      "page_start": 2,
+      "page_end": 2,
+      "heading_bbox": [50, 60, 120, 78]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "gold-fig-1",
+      "artifact_type": "figure",
+      "label": "Figure 1",
+      "caption": "Synthetic system overview",
+      "page": 1,
+      "bbox": [60, 180, 300, 340],
+      "caption_bbox": [60, 345, 300, 365],
+      "markdown": null,
+      "table_data": null
+    },
+    {
+      "id": "gold-tab-1",
+      "artifact_type": "table",
+      "label": "Table 1",
+      "caption": "Synthetic dataset summary",
+      "page": 2,
+      "bbox": [60, 180, 330, 300],
+      "caption_bbox": [60, 305, 330, 325],
+      "markdown": "| Dataset | Samples |\n| --- | --- |\n| Demo | 10 |",
+      "table_data": [["Dataset", "Samples"], ["Demo", "10"]]
+    }
+  ],
+  "references": [
+    {
+      "id": "gold-ref-fig-1",
+      "artifact_id": "gold-fig-1",
+      "text": "The workflow is shown in Figure 1.",
+      "page": 1,
+      "bbox": [50, 120, 280, 138]
+    },
+    {
+      "id": "gold-ref-tab-1",
+      "artifact_id": "gold-tab-1",
+      "text": "Dataset details are listed in Table 1.",
+      "page": 2,
+      "bbox": [50, 120, 300, 138]
+    }
+  ]
+}

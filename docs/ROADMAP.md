@@ -32,6 +32,12 @@
   - [x] 保存章节层级/页码/标题bbox、Artifact页码/bbox/图注/结构化表格，以及正文引用的目标、页码和bbox。
   - [x] 查询优先返回规范化`parsed_pdf`，缺失时回退到无伪造页码、bbox、图注、表格和正文引用的`gold_snapshot`。
   - [x] `DocumentStructure`保持客观事实、`PaperDeconstruction`保持科研语义；离线默认模式继续延迟加载数据库仓储和PyMuPDF。
+- [x] Step 4a：建立三解析器统一映射与可重复评测框架（不代表真实论文评测已完成）。
+  - [x] PyMuPDF、GROBID TEI和MinerU JSON统一输出`ParsedDocument`；适配器不依赖数据库，持久化继续由独立服务及权利门禁负责。
+  - [x] 建立`layout-gold-v1` Schema、双人标注/仲裁约束和人工模板；真实报告拒绝未仲裁Gold。
+  - [x] 实现章节标题F1、层级准确率、Figure/Table检测F1、图注相似度、页码准确率、正文引用F1和表格单元格F1。
+  - [x] 生成JSON与Markdown报告；CI内置样例强制标记`synthetic_smoke_test`，不得作为真实解析成绩。
+  - [x] 未配置GROBID或MinerU客户端时明确返回`unavailable`，不静默生成或替代解析结果。
 - [ ] 将 Gold 扩至 5–10 篇并完成仲裁。
 
 ## R3

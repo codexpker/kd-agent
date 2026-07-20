@@ -12,14 +12,14 @@
 - 叙事链、Claim、实验意图、图表角色、证据锚点和边界。
 - 未知论文 404 与排队论文不加载门禁。
 - Gold 结构快照，不伪造 PDF 页码、bbox、图注或正文引用。
-- PyMuPDF 的统一适配器接口；GROBID 与 MinerU 适配器边界。
+- PyMuPDF、GROBID TEI 与 MinerU JSON 到统一`ParsedDocument`的映射框架。
 - MySQL、Milvus、Neo4j 的 Compose 开发服务配置。
 
 ## 未从旧提交恢复、需要继续实现
 
 - Alembic `0001–0006` 的原始迁移历史。
-- GROBID TEI 与 MinerU JSON 的完整字段映射。
-- 五篇真实 PDF 版面真值与解析器正式评测结果。
+- GROBID 与 MinerU 外部服务客户端、部署及真实版本兼容性验收。
+- 五篇真实 PDF 版面真值与解析器正式评测结果；当前只有明确标识的合成冒烟测试。
 
 ## R2 重建进展
 
@@ -29,5 +29,6 @@
 - Gold CLI现已默认dry-run，只有显式`--commit`才按`paper_id + dataset_version`事务性写入或替换规范化派生对象；MySQL失败不会调用Neo4j，图失败返回`partial`并记录`failed`。
 - PaperSource已纳入Gold事务：稳定来源键允许多来源并存；同键按来源质量优先、同质量按严格更新的抓取时间替换；低质量或过期候选记为`protected`而不覆盖，并确定唯一主来源。元数据访问策略不替代PDF持久化权利确认。
 - 已新增`0003_reconstructed_pdf_layout`及PDF dry-run/显式提交CLI。规范化表只保存权利依据、文件哈希、解析器版本、章节、Figure/Table、bbox、图注、结构化表格和正文引用位置，不保存PDF原文件或路径。无权利依据时持久化硬阻断；查询优先返回`parsed_pdf`并安全回退到无伪造版面字段的`gold_snapshot`。
+- 已建立三解析器统一映射与评测框架：适配器只产出`ParsedDocument`，GROBID TEI和MinerU JSON已覆盖章节、层级、页码/bbox、图表/图注、正文引用及结构化表格字段；数据库写入仍由独立服务负责。`layout-gold-v1`要求显式区分真实仲裁Gold与`synthetic_smoke_test`，并输出JSON和Markdown七类指标。内置满分样例只验证程序闭合，不是实际解析质量结论。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

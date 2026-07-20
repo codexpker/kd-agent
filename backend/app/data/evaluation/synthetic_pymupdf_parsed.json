@@ -1,0 +1,65 @@
+{
+  "parser_name": "pymupdf",
+  "parser_version": "synthetic-fixture-v1",
+  "file_sha256": "ae8b58e8c16440d3e9a5f4cbc5e35e6038f566283519c04ed22894975cb61f7a",
+  "page_count": 2,
+  "sections": [
+    {
+      "id": "pymu-sec-1",
+      "title": "Introduction",
+      "level": 1,
+      "page_start": 1,
+      "page_end": 1,
+      "heading_bbox": [50, 60, 170, 78]
+    },
+    {
+      "id": "pymu-sec-2",
+      "title": "Method",
+      "level": 1,
+      "page_start": 2,
+      "page_end": 2,
+      "heading_bbox": [50, 60, 120, 78]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "pymu-fig-1",
+      "artifact_type": "figure",
+      "label": "Figure 1",
+      "caption": "Synthetic system overview",
+      "page": 1,
+      "bbox": [60, 180, 300, 340],
+      "caption_bbox": [60, 345, 300, 365]
+    },
+    {
+      "id": "pymu-tab-1",
+      "artifact_type": "table",
+      "label": "Table 1",
+      "caption": "Synthetic dataset summary",
+      "page": 2,
+      "bbox": [60, 180, 330, 300],
+      "caption_bbox": [60, 305, 330, 325],
+      "markdown": "| Dataset | Samples |\n| --- | --- |\n| Demo | 10 |",
+      "table_data": [["Dataset", "Samples"], ["Demo", "10"]]
+    }
+  ],
+  "references": [
+    {
+      "id": "pymu-ref-1",
+      "artifact_id": "pymu-fig-1",
+      "text": "The workflow is shown in Figure 1.",
+      "page": 1,
+      "bbox": [50, 120, 280, 138]
+    },
+    {
+      "id": "pymu-ref-2",
+      "artifact_id": "pymu-tab-1",
+      "text": "Dataset details are listed in Table 1.",
+      "page": 2,
+      "bbox": [50, 120, 300, 138]
+    }
+  ],
+  "warnings": [
+    "Synthetic fixture output; not produced by a real PyMuPDF run."
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "version": "synthetic-fixture-v1",
+  "pages": [
+    {
+      "page_idx": 0,
+      "blocks": [
+        {
+          "id": "mineru-sec-intro",
+          "type": "title",
+          "text": "Introduction",
+          "level": 1,
+          "bbox": [50, 60, 170, 78]
+        },
+        {
+          "id": "mineru-ref-fig",
+          "type": "figure_reference",
+          "target_id": "mineru-fig-1",
+          "text": "The workflow is shown in Figure 1.",
+          "bbox": [50, 120, 280, 138]
+        },
+        {
+          "id": "mineru-fig-1",
+          "type": "image",
+          "label": "Figure 1",
+          "caption": "Synthetic system overview",
+          "bbox": [60, 180, 300, 340],
+          "caption_bbox": [60, 345, 300, 365]
+        }
+      ]
+    },
+    {
+      "page_idx": 1,
+      "blocks": [
+        {
+          "id": "mineru-sec-method",
+          "type": "title",
+          "text": "Method",
+          "level": 1,
+          "bbox": [50, 60, 120, 78]
+        },
+        {
+          "id": "mineru-ref-table",
+          "type": "table_reference",
+          "target_id": "mineru-tab-1",
+          "text": "Dataset details are listed in Table 1.",
+          "bbox": [50, 120, 300, 138]
+        },
+        {
+          "id": "mineru-tab-1",
+          "type": "table",
+          "label": "Table 1",
+          "caption": "Synthetic dataset summary",
+          "bbox": [60, 180, 330, 300],
+          "caption_bbox": [60, 305, 330, 325],
+          "table_data": [["Dataset", "Samples"], ["Demo", "10"]],
+          "table_markdown": "| Dataset | Samples |\n| --- | --- |\n| Demo | 10 |"
+        }
+      ]
+    }
+  ]
+}

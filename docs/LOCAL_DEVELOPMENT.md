@@ -137,8 +137,63 @@ GET /api/v1/papers/anomaly-transformer-2022/document-structure
 
 当前PyMuPDF适配器仍是可复现基线：编号标题、图注和正文引用使用规则提取，表格单元格使用
 PyMuPDF表格探测。复杂双栏、扫描页、跨页表格和矢量Figure可能无法得到对象bbox或结构化
-单元格，此时对应字段保持为空并写入warnings，不得据此声称解析完整。GROBID TEI和MinerU
-JSON完整映射及三解析器正式评测仍属于Step 4；测试合成PDF只验证链路，不是论文Gold真值。
+单元格，此时对应字段保持为空并写入warnings，不得据此声称解析完整。
+
+### Step 4a 三解析器统一映射与评测框架
+
+`PyMuPdfAdapter`、`GrobidTeiAdapter`和`MinerUJsonAdapter`统一返回`ParsedDocument`。GROBID映射
+TEI的嵌套章节、`coords`、Figure/Table、`figDesc`、表格行列和正文`ref`；MinerU映射
+`pages/blocks`、`pdf_info/para_blocks`或官方`content_list.json`中的标题、图片/Chart、表格、
+显式正文引用、bbox和结构化单元格。GROBID的多行`coords`按同页外接框归一化，MinerU的
+`table_body` HTML按可见`th/td`提取二维单元格；当前不展开`rowspan/colspan`。
+适配器模块不依赖SQLAlchemy或仓储；需要持久化时仍只能把解析结果交给`PdfLayoutService`，并
+经过Step 3的权利硬门禁。
+
+仓库没有静默启动或模拟GROBID/MinerU服务。应用代码注入对应客户端后才能解析真实PDF；未配置
+客户端时，`ingest_pdf --parser grobid`或`--parser mineru`返回`overall_status=unavailable`和退出码4，
+不会回退到合成结果。当前映射覆盖仓库Gold Schema声明的字段；接入具体上游版本时仍需用其真实
+输出建立兼容性fixture。
+
+字段口径以[GROBID PDF coordinates](https://grobid.readthedocs.io/en/latest/Coordinates-in-PDF/)
+和[MinerU Output File Format](https://opendatalab.github.io/MinerU/reference/output_files/)为上游基准。
+MinerU官方输出在版本/后端间存在不兼容变化，因此报告必须保存真实解析器版本；官方输出没有
+稳定目标ID的正文图表引用不会被规则猜测，而是保持为空并写入warning。
+
+人工标注模板位于`backend/app/data/evaluation/layout_gold_template.json`。标注前必须替换论文ID、
+文件SHA-256、页数和权利依据；两名标注员先独立工作，仲裁后增加`adjudicator`并把状态改为
+`adjudicated`。真实报告会拒绝`draft`或仅双人未仲裁的Gold。可打印机器可读JSON Schema：
+
+```bash
+cd backend
+python -m app.cli.evaluate_pdf_layout --print-gold-schema
+```
+
+CI使用内置合成TEI、MinerU JSON和统一契约样例验证映射与评测程序：
+
+```bash
+python -m app.cli.evaluate_pdf_layout \
+  --synthetic-smoke-test \
+  --json-report tmp/pdf-layout-report.json \
+  --markdown-report tmp/pdf-layout-report.md
+```
+
+两份报告都强制标记`synthetic_smoke_test`，Markdown标题同时显示`SYNTHETIC SMOKE TEST`；满分只
+表示fixture和评测程序闭合，不是PyMuPDF、GROBID或MinerU的真实论文成绩。真实Gold完成仲裁后可用：
+
+```bash
+python -m app.cli.evaluate_pdf_layout \
+  --gold /path/to/adjudicated-layout-gold.json \
+  --prediction /path/to/pymupdf-parsed.json \
+  --prediction /path/to/grobid-parsed.json \
+  --prediction /path/to/mineru-parsed.json \
+  --json-report /path/to/report.json \
+  --markdown-report /path/to/report.md
+```
+
+指标包括章节标题F1、匹配章节的层级准确率、Figure与Table检测F1、匹配图表的图注字符序列
+相似度、匹配章节范围/图表/正文引用的页码准确率、按目标图表和页码匹配的正文引用F1，以及按
+表格、行、列和规范化文本计算的单元格F1。章节和图表检测分别用规范化标题与标签匹配；报告中
+保留该口径，后续若采用模糊匹配必须提升Schema版本并重新跑基线。
 
 使用 MySQL 文档结构读模型时，将 `.env` 中的配置切换为：
 

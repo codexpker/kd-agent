@@ -26,7 +26,7 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["data/gold/**/*.json"]
+app = ["data/gold/**/*.json", "data/evaluation/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

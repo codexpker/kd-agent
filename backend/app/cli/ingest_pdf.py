@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from app.config import get_settings
-from app.pdf.adapters import create_pdf_parser
+from app.pdf.adapters import ExternalParserUnavailableError, create_pdf_parser
 from app.pdf.contracts import PersistenceRight
 from app.pdf.persistence import PersistenceDeniedError, require_persistence_right
 from app.pdf.service import PdfLayoutService
@@ -16,7 +16,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("paper_id", help="Existing authoritative MySQL paper ID")
     parser.add_argument("pdf_path", type=Path, help="Local PDF path; the file is never stored")
-    parser.add_argument("--parser", choices=["pymupdf"], default="pymupdf")
+    parser.add_argument(
+        "--parser", choices=["pymupdf", "grobid", "mineru"], default="pymupdf"
+    )
     parser.add_argument(
         "--commit",
         action="store_true",
@@ -52,9 +54,25 @@ def _right_from_args(args: argparse.Namespace) -> PersistenceRight | None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     service = PdfLayoutService()
-    preview = service.preview(
-        args.paper_id, args.pdf_path, create_pdf_parser(args.parser)
-    )
+    try:
+        preview = service.preview(
+            args.paper_id, args.pdf_path, create_pdf_parser(args.parser)
+        )
+    except ExternalParserUnavailableError as exc:
+        print(
+            json.dumps(
+                {
+                    "paper_id": args.paper_id,
+                    "committed": False,
+                    "overall_status": "unavailable",
+                    "parser": args.parser,
+                    "error": str(exc),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 4
     persistence = None
     right = None
     if args.commit:

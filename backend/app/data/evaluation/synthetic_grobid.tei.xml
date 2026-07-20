@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0">
+  <text>
+    <body>
+      <pb n="1"/>
+      <div xml:id="grobid-sec-intro">
+        <head coords="1,50,60,120,18">Introduction</head>
+        <p>The workflow is shown in <ref xml:id="grobid-ref-fig" type="figure" target="#grobid-fig-1" coords="1,50,120,230,18">Figure 1.</ref></p>
+        <figure xml:id="grobid-fig-1" type="figure" coords="1,60,180,240,160">
+          <head>Figure 1</head>
+          <figDesc coords="1,60,345,240,20">Synthetic system overview</figDesc>
+        </figure>
+      </div>
+      <pb n="2"/>
+      <div xml:id="grobid-sec-method">
+        <head coords="2,50,60,70,18">Method</head>
+        <p>Dataset details are listed in <ref xml:id="grobid-ref-table" type="table" target="#grobid-tab-1" coords="2,50,120,250,18">Table 1.</ref></p>
+        <figure xml:id="grobid-tab-1" type="table" coords="2,60,180,270,120">
+          <head>Table 1</head>
+          <figDesc coords="2,60,305,270,20">Synthetic dataset summary</figDesc>
+          <table>
+            <row><cell>Dataset</cell><cell>Samples</cell></row>
+            <row><cell>Demo</cell><cell>10</cell></row>
+          </table>
+        </figure>
+      </div>
+    </body>
+  </text>
+</TEI>

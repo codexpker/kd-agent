@@ -1,0 +1,47 @@
+{
+  "schema_version": "layout-gold-v1",
+  "evaluation_id": "replace-with-stable-evaluation-id",
+  "evaluation_kind": "real_paper_evaluation",
+  "paper_id": "replace-with-authoritative-paper-id",
+  "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "page_count": 1,
+  "source_rights_basis": "open_full_text",
+  "annotation_status": "draft",
+  "annotators": [
+    {"annotator_id": "annotator-a", "role": "annotator"},
+    {"annotator_id": "annotator-b", "role": "annotator"}
+  ],
+  "annotation_notes": "Replace every placeholder. Annotators work independently before adjudication.",
+  "sections": [
+    {
+      "id": "sec-stable-id",
+      "title": "Exact visible heading",
+      "level": 1,
+      "page_start": 1,
+      "page_end": 1,
+      "heading_bbox": null
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "artifact-stable-id",
+      "artifact_type": "figure",
+      "label": "Figure 1",
+      "caption": "Exact visible caption",
+      "page": 1,
+      "bbox": null,
+      "caption_bbox": null,
+      "markdown": null,
+      "table_data": null
+    }
+  ],
+  "references": [
+    {
+      "id": "reference-stable-id",
+      "artifact_id": "artifact-stable-id",
+      "text": "Exact sentence or line containing the reference.",
+      "page": 1,
+      "bbox": null
+    }
+  ]
+}
