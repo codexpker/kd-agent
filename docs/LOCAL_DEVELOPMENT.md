@@ -1,5 +1,53 @@
 # 本地开发
 
+## Demo Acceptance Gate
+
+安装后端开发依赖、前端依赖和Playwright Chromium：
+
+```bash
+python -m pip install -e './backend[dev,infra]'
+cd frontend
+npm install
+npx playwright install chromium
+```
+
+只验收默认离线演示链：
+
+```bash
+make demo-accept-offline
+```
+
+MySQL和Neo4j已经启动时，运行完整演示门禁：
+
+```bash
+docker compose up -d --wait mysql neo4j
+make demo-accept
+```
+
+`demo-accept-offline`依次运行全部后端测试、Vue生产构建和一个Playwright黄金流程。浏览器流程会
+自动在独立端口启动内存后端与Vite，验证`gold_snapshot`不伪造页码、真实语料返回
+`insufficient_evidence`，以及合成表单到Claim、诊断、实验计划、运行清单、CSV Schema、绘图代码、
+受控执行、逐点溯源和下载产物的完整闭环。所用`synthetic_plot_smoke.csv`只用于验证程序，不能
+作为论文实验或比赛成绩。`demo-accept`随后执行真实MySQL/Neo4j R2幂等接受测试。
+
+若只需要重跑浏览器黄金流程：
+
+```bash
+cd frontend
+npm run test:e2e
+```
+
+Windows没有`make`时，可以直接使用同一个跨平台接受测试入口：
+
+```powershell
+cd backend
+..\.venv\Scripts\python.exe -m app.cli.demo_acceptance
+..\.venv\Scripts\python.exe -m app.cli.demo_acceptance --with-infrastructure
+```
+
+测试会优先使用仓库根目录`.venv`中的Python；也可以通过`KD_AGENT_PYTHON`显式指定解释器。
+Playwright失败截图和trace只写入被Git忽略的`tmp/playwright-results`。
+
 ## 离线演示
 
 在仓库根目录复制 `.env.example` 为 `.env`，然后：

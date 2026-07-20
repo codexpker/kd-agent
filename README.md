@@ -31,9 +31,37 @@ npm run dev
 
 ## 验证
 
+首次安装Playwright浏览器：
+
+```bash
+cd frontend && npx playwright install chromium
+```
+
+统一验证默认离线黄金流程：
+
+```bash
+make demo-accept-offline
+```
+
+Docker中的MySQL和Neo4j已启动时，可追加R2真实双库接受测试：
+
+```bash
+make demo-accept
+```
+
+Windows没有`make`时，在`backend`目录运行：
+
+```powershell
+..\.venv\Scripts\python.exe -m app.cli.demo_acceptance
+..\.venv\Scripts\python.exe -m app.cli.demo_acceptance --with-infrastructure
+```
+
+也可以分别运行：
+
 ```bash
 cd backend && python -m pytest
 cd frontend && npm run build
+cd frontend && npm run test:e2e
 ```
 
 R2 的 MySQL/Neo4j 验收需要 Docker 与基础设施依赖：

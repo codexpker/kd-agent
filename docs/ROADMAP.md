@@ -101,4 +101,9 @@
   - [x] 区分`user_declared`与`externally_verifiable`；后者必须提供签发方、证据引用和SHA-256，但状态只能是`pending_external_verification`，上传者不能自行标记已验证。
   - [x] 生命周期支持`process_session`和`metadata_only`：原始上传从不持久化；规范化数据最多保留72小时且受进程临时目录限制，或立即只留哈希/Schema。到期和显式删除追加审计修订并清除临时图表。
   - [x] 新运行API、带身份门禁的数据绑定、运行—上传—Experiment—Artifact闭合校验、Vue登记/历史/删除界面及内存/MySQL/API/迁移/错误路径测试通过；默认离线模式保持可用。
+- [x] 建立可重复的Demo Acceptance Gate，不再以手工页面检查代替核心流程验收。
+  - [x] 新增单一Playwright黄金流程，自动启动独立离线后端与Vite，覆盖开发种子边界、`gold_snapshot`空页码、真实语料`insufficient_evidence`和R4完整绘图闭环。
+  - [x] 浏览器验收从合成TAD表单继续到Claim v1、八项诊断、Experiment/Artifact Plan、运行登记、CSV Schema、受控绘图、PNG/SVG、逐点溯源JSON和复现包；合成数据不被标记为科研成绩。
+  - [x] 运行登记默认选择带Figure的Experiment，并在Table-only实验上显示明确提示，避免演示在空Figure ArtifactPlan处无解释停止。
+  - [x] `make demo-accept-offline`统一运行后端全测、Vue生产构建和浏览器黄金流程；`make demo-accept`再追加真实MySQL/Neo4j R2接受测试。
 - [ ] 后续：接入真正的认证身份、受信任外部核验者工作流和加密对象存储；在此之前不得把自报身份或`pending_external_verification`写成已认证/已验证。

@@ -292,6 +292,21 @@ const figureArtifacts = computed(
         || item.source_experiment_ids.includes(runManifest.value?.experiment_id ?? selectedRunExperimentId.value)),
   ) ?? [],
 )
+const runExperimentOptions = computed(() => experimentPlan.value?.experiments.map((experiment) => {
+  const linkedArtifacts = experimentPlan.value!.artifacts.filter(
+    (artifact) => artifact.source_experiment_ids.includes(experiment.experiment_id),
+  )
+  return {
+    experiment,
+    figureCount: linkedArtifacts.filter((artifact) => artifact.artifact_kind === 'figure').length,
+    tableCount: linkedArtifacts.filter((artifact) => artifact.artifact_kind === 'table').length,
+  }
+}) ?? [])
+const selectedRunExperimentHasFigure = computed(
+  () => Boolean(runExperimentOptions.value.find(
+    (item) => item.experiment.experiment_id === selectedRunExperimentId.value,
+  )?.figureCount),
+)
 const plotImageUrl = computed(() => {
   if (!plotDraft.value || plotDraft.value.execution.status !== 'succeeded') return ''
   const filename = plotDraft.value.execution.generated_files.find((item) => item.endsWith('.png'))
@@ -322,6 +337,17 @@ function claimPayload(): ClaimInput {
       verified: false,
     })),
   }
+}
+
+function selectDefaultPlotExperiment() {
+  const current = runExperimentOptions.value.find(
+    (item) => item.experiment.experiment_id === selectedRunExperimentId.value,
+  )
+  if (current?.figureCount) return
+  selectedRunExperimentId.value = (
+    runExperimentOptions.value.find((item) => item.figureCount > 0)
+    ?? runExperimentOptions.value[0]
+  )?.experiment.experiment_id ?? ''
 }
 
 function loadClaimIntoEditor(claim: ClaimInput) {
@@ -522,6 +548,7 @@ async function loadExperimentPlanHistory() {
   experimentPlanHistory.value = (await response.json()).revisions
   if (experimentPlanHistory.value.length) {
     experimentPlan.value = experimentPlanHistory.value.at(-1)!
+    selectDefaultPlotExperiment()
   }
 }
 
@@ -531,6 +558,7 @@ async function loadExperimentPlanRevision(revision: number) {
   )
   if (!response.ok) throw new Error(`实验计划 r${revision} 加载失败。`)
   experimentPlan.value = await response.json()
+  selectDefaultPlotExperiment()
 }
 
 async function generateExperimentPlan() {
@@ -558,6 +586,7 @@ async function generateExperimentPlan() {
     }
     experimentPlan.value = await response.json()
     await loadExperimentPlanHistory()
+    selectDefaultPlotExperiment()
     notice.value = `已生成实验与图表计划 r${experimentPlan.value!.revision}；未生成任何实验结果或预期数值。`
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '未知错误'
@@ -590,6 +619,7 @@ async function saveExperimentPlan() {
     }
     experimentPlan.value = await response.json()
     await loadExperimentPlanHistory()
+    selectDefaultPlotExperiment()
     notice.value = `计划编辑已保存为 r${experimentPlan.value!.revision}，质量检查已重新计算。`
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '未知错误'
@@ -865,11 +895,11 @@ async function deleteRunData() {
           这里保存的是用户输入，不是论文事实。规则规划器只诊断最小证据需求，不评估可行性或创新性。
         </p>
       </div>
-      <button type="button" :disabled="loading" @click="loadTadExample">载入合成 TAD 示例</button>
+      <button data-testid="load-tad-example" type="button" :disabled="loading" @click="loadTadExample">载入合成 TAD 示例</button>
     </header>
 
     <div class="project-toolbar">
-      <label>项目 ID<input v-model="projectId" pattern="[a-z0-9][a-z0-9-]{2,63}" /></label>
+      <label>项目 ID<input v-model="projectId" data-testid="project-id" pattern="[a-z0-9][a-z0-9-]{2,63}" /></label>
       <button type="button" :disabled="loading" @click="loadHistory">加载版本历史</button>
       <span>下一版本：v{{ expectedLatestVersion + 1 }}</span>
     </div>
@@ -898,13 +928,13 @@ async function deleteRunData() {
           <button type="button" @click="removeExistingResult(index)">删除</button>
         </article>
       </section>
-      <button class="save-claim" :disabled="loading">{{ loading ? '处理中' : `保存为 Claim v${expectedLatestVersion + 1} 并诊断` }}</button>
+      <button class="save-claim" data-testid="save-claim" :disabled="loading">{{ loading ? '处理中' : `保存为 Claim v${expectedLatestVersion + 1} 并诊断` }}</button>
     </form>
 
     <p v-if="error" class="claim-error">{{ error }}</p>
     <p v-if="notice" class="claim-notice">{{ notice }}</p>
 
-    <section v-if="envelope" class="diagnosis">
+    <section v-if="envelope" class="diagnosis" data-testid="claim-diagnosis">
       <header class="diagnosis-header">
         <div><p class="claim-eyebrow">MINIMUM EVIDENCE DIAGNOSIS</p><h3>Claim v{{ envelope.claim.version }} · 诊断 r{{ envelope.diagnosis.revision }}</h3></div>
         <div><span>{{ envelope.claim.origin }}</span><span>{{ envelope.diagnosis.origin }}</span><span>{{ envelope.diagnosis.planner_version }}</span></div>
@@ -951,7 +981,7 @@ async function deleteRunData() {
           <label v-for="item in history" :key="item.claim_version_id">
             <input v-model="selectedClaimVersions" type="checkbox" :value="item.version" /> Claim v{{ item.version }}
           </label>
-          <button type="button" :disabled="loading" @click="generateExperimentPlan">
+          <button data-testid="generate-plan" type="button" :disabled="loading" @click="generateExperimentPlan">
             生成计划 r{{ expectedLatestPlanRevision + 1 }}
           </button>
         </div>
@@ -1096,7 +1126,7 @@ async function deleteRunData() {
       </template>
     </section>
 
-    <section v-if="experimentPlan" class="plot-draft-workspace">
+    <section v-if="experimentPlan" class="plot-draft-workspace" data-testid="plot-workspace">
       <header class="plot-heading">
         <div>
           <p class="claim-eyebrow">REAL DATA → TRACEABLE PLOT DRAFT</p>
@@ -1114,13 +1144,18 @@ async function deleteRunData() {
           <span>immutable revision chain</span>
         </header>
         <label>ExperimentPlan
-          <select v-model="selectedRunExperimentId" required>
+          <select v-model="selectedRunExperimentId" data-testid="run-experiment-select" required>
             <option value="" disabled>请选择</option>
-            <option v-for="experiment in experimentPlan.experiments" :key="experiment.experiment_id" :value="experiment.experiment_id">
-              {{ experiment.experiment_id.split(':').at(-1) }} · {{ experiment.status }}
+            <option v-for="item in runExperimentOptions" :key="item.experiment.experiment_id" :value="item.experiment.experiment_id">
+              {{ item.experiment.experiment_id.split(':').at(-1) }} · {{ item.experiment.status }} · {{ item.figureCount }} Figure / {{ item.tableCount }} Table
             </option>
           </select>
         </label>
+        <p class="wide run-artifact-guidance" :class="{ warning: selectedRunExperimentId && !selectedRunExperimentHasFigure }" data-testid="run-artifact-guidance">
+          {{ selectedRunExperimentHasFigure
+            ? '已选择带 Figure ArtifactPlan 的实验，可继续完成绘图演示。'
+            : '该实验没有 Figure ArtifactPlan；可以登记运行，但不能用于本轮绘图演示。' }}
+        </p>
         <label>用户自报 ID<input v-model="runActorId" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}" /></label>
         <label>显示名<input v-model="runDisplayName" required /></label>
         <label class="wide">实际入口命令<input v-model="runEntrypoint" required /></label>
@@ -1143,10 +1178,10 @@ async function deleteRunData() {
         <label>数据生命周期
           <select v-model="runLifecycleMode"><option value="process_session">规范化数据保留最多24小时/进程期</option><option value="metadata_only">只留哈希与Schema，不可绘图</option></select>
         </label>
-        <button class="wide" :disabled="loading">登记新的运行清单</button>
+        <button class="wide" data-testid="register-run" :disabled="loading">登记新的运行清单</button>
       </form>
 
-      <section v-if="runManifest" class="run-manifest">
+      <section v-if="runManifest" class="run-manifest" data-testid="run-manifest">
         <header><div><h4>{{ runManifest.run_id }} · r{{ runManifest.revision }}</h4><p>{{ runManifest.experiment_id }}</p></div><strong>{{ runManifest.status }}</strong></header>
         <code>配置 SHA-256 {{ runManifest.run_configuration_sha256 }}</code>
         <div class="run-facts">
@@ -1164,13 +1199,13 @@ async function deleteRunData() {
 
       <section class="upload-panel">
         <label>真实 CSV / JSON
-          <input type="file" accept=".csv,.json,text/csv,application/json" @change="selectPlotFile" />
+          <input data-testid="plot-upload-input" type="file" accept=".csv,.json,text/csv,application/json" @change="selectPlotFile" />
         </label>
         <p>选择文件即表示它由你主动提供；系统只能记录来源为 user_uploaded，不能独立证明数据真实性。</p>
-        <button type="button" :disabled="loading || !selectedPlotFile || !runManifest" @click="uploadPlotDataset">上传、验证并绑定运行</button>
+        <button data-testid="upload-plot-data" type="button" :disabled="loading || !selectedPlotFile || !runManifest" @click="uploadPlotDataset">上传、验证并绑定运行</button>
       </section>
 
-      <section v-if="uploadReport" class="schema-report">
+      <section v-if="uploadReport" class="schema-report" data-testid="schema-report">
         <header>
           <div><h4>{{ uploadReport.original_filename }}</h4><p>{{ uploadReport.source_format }} · {{ uploadReport.row_count }} 行 · {{ uploadReport.byte_size }} bytes</p></div>
           <strong>{{ uploadReport.valid ? 'Schema 可继续' : 'Schema 阻断' }}</strong>
@@ -1191,7 +1226,7 @@ async function deleteRunData() {
 
       <form v-if="uploadReport" class="plot-config" @submit.prevent="generatePlotCode">
         <label>Figure ArtifactPlan
-          <select v-model="selectedArtifactPlanId" required>
+          <select v-model="selectedArtifactPlanId" data-testid="figure-artifact-select" required>
             <option value="" disabled>请选择</option>
             <option v-for="artifact in figureArtifacts" :key="artifact.artifact_id" :value="artifact.artifact_id">
               {{ artifact.artifact_id.split(':').at(-1) }} · {{ artifact.supports_claim_version_ids.length }} Claim
@@ -1200,12 +1235,12 @@ async function deleteRunData() {
         </label>
         <label>图形<select v-model="plotKind"><option value="line">Line</option><option value="bar">Bar</option><option value="scatter">Scatter</option></select></label>
         <label>X 字段<select v-model="plotXColumn" required><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }} · {{ column.inferred_type }}</option></select></label>
-        <label>Y 字段<select v-model="plotYColumn" required><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }} · {{ column.inferred_type }}</option></select></label>
-        <label>分组 / 图例字段<select v-model="plotHueColumn"><option value="">不分组</option><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label>
-        <label>图例标题<input v-model="plotLegendTitle" :required="Boolean(plotHueColumn)" :disabled="!plotHueColumn" /></label>
-        <label class="wide">标题<input v-model="plotTitle" required placeholder="论文图表标题，不包含结果断言" /></label>
-        <label>X 轴名称<input v-model="plotXLabel" required /></label><label>X 单位<input v-model="plotXUnit" required placeholder="unitless / not_applicable / 秒" /></label>
-        <label>Y 轴名称<input v-model="plotYLabel" required /></label><label>Y 单位<input v-model="plotYUnit" required placeholder="unitless / F1 / ms" /></label>
+        <label>Y 字段<select v-model="plotYColumn" data-testid="plot-y-column" required><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }} · {{ column.inferred_type }}</option></select></label>
+        <label>分组 / 图例字段<select v-model="plotHueColumn" data-testid="plot-hue-column"><option value="">不分组</option><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label>
+        <label>图例标题<input v-model="plotLegendTitle" data-testid="plot-legend-title" :required="Boolean(plotHueColumn)" :disabled="!plotHueColumn" /></label>
+        <label class="wide">标题<input v-model="plotTitle" data-testid="plot-title" required placeholder="论文图表标题，不包含结果断言" /></label>
+        <label>X 轴名称<input v-model="plotXLabel" data-testid="plot-x-label" required /></label><label>X 单位<input v-model="plotXUnit" required placeholder="unitless / not_applicable / 秒" /></label>
+        <label>Y 轴名称<input v-model="plotYLabel" data-testid="plot-y-label" required /></label><label>Y 单位<input v-model="plotYUnit" required placeholder="unitless / F1 / ms" /></label>
         <label>聚合<select v-model="plotAggregation"><option value="none">不聚合</option><option value="mean">算术平均</option></select></label>
         <label>误差线<select v-model="plotErrorBar"><option value="none">无</option><option value="standard_deviation" :disabled="plotAggregation !== 'mean'">样本标准差</option></select></label>
         <label>Y 轴下界<input v-model="plotYAxisMin" type="number" step="any" placeholder="留空自动" /></label>
@@ -1215,10 +1250,10 @@ async function deleteRunData() {
           <label><input v-model="plotFormats" type="checkbox" value="svg" /> SVG</label>
           <label><input v-model="plotFormats" type="checkbox" value="pdf" /> PDF</label>
         </fieldset>
-        <button class="generate-code" :disabled="loading">生成 Matplotlib 代码并检查</button>
+        <button class="generate-code" data-testid="generate-plot-code" :disabled="loading">生成 Matplotlib 代码并检查</button>
       </form>
 
-      <section v-if="plotDraft" class="plot-result">
+      <section v-if="plotDraft" class="plot-result" data-testid="plot-result">
         <header>
           <div><h4>图表草稿 {{ plotDraft.draft_id }}</h4><p>{{ plotDraft.code_generator_version }} · code SHA-256 {{ plotDraft.code_sha256 }}</p></div>
           <strong :class="plotDraft.execution.status">{{ plotDraft.execution.status }}</strong>
@@ -1229,7 +1264,7 @@ async function deleteRunData() {
           </article>
         </div>
         <details><summary>查看生成的只读代码</summary><pre><code>{{ plotDraft.generated_code }}</code></pre></details>
-        <button type="button" :disabled="loading || plotDraft.quality_report.has_errors" @click="executePlotCode">
+        <button data-testid="execute-plot-code" type="button" :disabled="loading || plotDraft.quality_report.has_errors" @click="executePlotCode">
           在受控进程中执行
         </button>
 
@@ -1239,7 +1274,7 @@ async function deleteRunData() {
             <span>Matplotlib {{ plotDraft.execution.library_versions?.matplotlib }}</span>
             <span>逐点溯源已生成</span>
           </div>
-          <img v-if="plotImageUrl" :src="plotImageUrl" alt="由用户上传数据成功执行生成的图表草稿" />
+          <img v-if="plotImageUrl" data-testid="plot-result-image" :src="plotImageUrl" alt="由用户上传数据成功执行生成的图表草稿" />
           <div class="download-links">
             <a v-for="filename in plotDraft.execution.generated_files" :key="filename" :href="plotFileUrl(filename)" download>{{ filename }}</a>
             <a v-if="plotDraft.execution.traceability_file" :href="plotFileUrl(plotDraft.execution.traceability_file)" download>逐点溯源 JSON</a>
@@ -1264,6 +1299,7 @@ async function deleteRunData() {
 .experiment-planning { margin-top: 95px; padding-top: 55px; border-top: 1px solid #526059; }.plan-heading { display: grid; grid-template-columns: 1fr minmax(280px, 420px); gap: 30px; align-items: end; }.plan-heading h3, .artifact-plans > header h3 { margin: 8px 0; font-size: 34px; }.plan-heading p { color: #abb6af; line-height: 1.6; }.claim-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 16px; border: 1px solid #526059; }.claim-selector label { display: flex; gap: 7px; align-items: center; font-size: 12px; }.claim-selector button { grid-column: 1 / -1; padding: 11px; border: 1px solid #dfff43; background: #dfff43; font-weight: 800; }.plan-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0; }.plan-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #c5cec9; font-size: 10px; }.quality-report { padding: 20px; border: 1px solid #68766e; background: #111a16; }.quality-report > header { display: flex; justify-content: space-between; align-items: center; }.quality-report h4, .quality-report p { margin: 3px 0; }.quality-report header p { color: #859188; font-size: 11px; }.quality-report strong { color: #dfff43; }.quality-report strong.danger { color: #ff9b76; }.quality-report article { display: grid; grid-template-columns: 210px 1fr; gap: 6px 15px; margin-top: 10px; padding: 11px; border-left: 4px solid #eccb53; background: #22271d; }.quality-report article.error { border-color: #f56a3b; }.quality-report article small { grid-column: 2; color: #abb6af; }.quality-pass { color: #bfe888; }.experiment-list { display: grid; gap: 24px; margin-top: 25px; }.experiment-list > article { padding: 26px; border: 1px solid #526059; background: #1b2721; }.experiment-list > article > header, .plan-subsection > header, .artifact-plans article > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }.experiment-list > article > header div { display: flex; align-items: center; gap: 13px; }.experiment-list > article > header span { color: #dfff43; font-size: 26px; }.experiment-list h4 { margin: 0; text-transform: uppercase; }.experiment-list select, .experiment-list input, .experiment-list textarea, .artifact-plans select, .artifact-plans input, .artifact-plans textarea { min-width: 0; padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; font: inherit; }.source-text { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }.source-text label, .plan-subsection label, .plan-variables label, .artifact-plan-grid label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.source-text textarea { background: #dfe1d7; }.plan-subsection { margin-top: 18px; padding-top: 15px; border-top: 1px dotted #68766e; }.plan-subsection h5 { margin: 0 0 10px; color: #dfff43; letter-spacing: 1px; }.plan-subsection header button { border: 1px solid #dfff43; background: transparent; color: #dfff43; padding: 7px 9px; }.dataset-grid, .controls-grid, .artifact-plan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }.wide { grid-column: 1 / -1; }.baseline-grid { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 9px; margin-top: 9px; }.baseline-grid button, .metric-grid button { border: 1px solid #f56a3b; background: transparent; color: #f6a181; }.metric-grid { display: grid; grid-template-columns: 1fr 190px 200px auto; gap: 8px; margin-top: 8px; }.plan-variables { margin-top: 18px; }.boundary-editor .proof-grid { margin-top: 0; }.link-note { margin: 14px 0 0; color: #859188; font-size: 10px; overflow-wrap: anywhere; }.artifact-plans { margin-top: 55px; }.artifact-plans > article { margin-top: 14px; padding: 22px; border: 1px solid #526059; }.artifact-plan-grid { margin-top: 14px; }.save-plan { background: #f56a3b; border-color: #f56a3b; color: #fff; }
 .plot-draft-workspace { margin-top: 95px; padding-top: 55px; border-top: 2px solid #f56a3b; }.plot-heading { display: flex; justify-content: space-between; gap: 28px; align-items: end; }.plot-heading h3 { margin: 8px 0; font-size: 36px; }.plot-heading p { color: #abb6af; line-height: 1.6; }.plot-policy { display: flex; flex-wrap: wrap; gap: 6px; }.plot-policy span, .execution-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #dfff43; font-size: 10px; }.upload-panel { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr auto; gap: 14px; align-items: end; margin-top: 25px; padding: 20px; border: 1px solid #68766e; background: #1b2721; }.upload-panel label, .plot-config label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.upload-panel p { margin: 0; color: #abb6af; font-size: 12px; }.upload-panel input, .plot-config input, .plot-config select { padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; }.upload-panel button, .plot-config button, .plot-result > button { padding: 11px 14px; border: 1px solid #dfff43; background: #dfff43; color: #17211d; font-weight: 800; }.schema-report, .plot-result { margin-top: 18px; padding: 22px; border: 1px solid #526059; background: #111a16; }.schema-report > header, .plot-result > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }.schema-report h4, .schema-report p, .plot-result h4, .plot-result p { margin: 3px 0; }.schema-report header p, .plot-result header p { color: #859188; font-size: 11px; overflow-wrap: anywhere; }.schema-report code { display: block; margin: 12px 0; color: #dfff43; overflow-wrap: anywhere; }.schema-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }.schema-columns article { display: grid; gap: 4px; padding: 12px; background: #1e2a24; }.schema-columns span, .schema-columns small { color: #abb6af; }.schema-issues p { padding: 8px; border-left: 3px solid #eccb53; background: #22271d; }.schema-issues p.error { border-color: #f56a3b; }.plot-config { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; margin-top: 18px; padding: 22px; border: 1px solid #68766e; }.plot-config fieldset { display: flex; gap: 12px; align-items: center; border: 1px solid #68766e; }.plot-config fieldset label { display: flex; align-items: center; }.plot-config .generate-code { grid-column: 1 / -1; }.plot-checks { display: grid; gap: 7px; margin: 18px 0; }.plot-checks article { display: grid; grid-template-columns: 210px 1fr; gap: 5px 12px; padding: 10px; border-left: 4px solid #75a986; background: #1e2a24; }.plot-checks article.warning { border-color: #eccb53; }.plot-checks article.error { border-color: #f56a3b; }.plot-checks small { grid-column: 2; color: #abb6af; }.plot-result details { margin: 16px 0; }.plot-result pre { max-height: 420px; overflow: auto; padding: 16px; background: #050806; color: #d5eadb; }.plot-result > button:disabled { opacity: .45; }.plot-result img { display: block; max-width: min(100%, 1000px); margin: 22px auto; padding: 10px; background: white; }.execution-meta, .download-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }.download-links a { padding: 10px 12px; border: 1px solid #dfff43; color: #dfff43; text-decoration: none; }.execution-failure { padding: 12px; background: #7b2c22; color: white; }
 .run-registration { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 24px; padding: 22px; border: 1px solid #68766e; background: #1b2721; }.run-registration > header, .run-manifest > header { display: flex; justify-content: space-between; gap: 15px; align-items: center; }.run-registration h4, .run-registration p, .run-manifest h4, .run-manifest p { margin: 3px 0; }.run-registration p, .run-manifest p { color: #abb6af; font-size: 11px; }.run-registration label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.run-registration input, .run-registration select { min-width: 0; padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; }.run-registration button { padding: 12px; border: 1px solid #f56a3b; background: #f56a3b; color: white; font-weight: 800; }.run-manifest { margin-top: 15px; padding: 20px; border: 1px solid #dfff43; background: #111a16; }.run-manifest code { display: block; margin: 12px 0; color: #dfff43; overflow-wrap: anywhere; }.run-facts, .run-revisions { display: flex; flex-wrap: wrap; gap: 7px; }.run-facts span, .run-revisions span { padding: 6px 8px; border: 1px solid #526059; color: #c5cec9; font-size: 10px; }.run-revisions { margin-top: 9px; }.run-manifest button { margin-top: 14px; padding: 9px 11px; border: 1px solid #f56a3b; background: transparent; color: #f6a181; }
+.run-artifact-guidance { margin: 0; padding: 9px 11px; border-left: 4px solid #75a986; background: #1e2a24; color: #c5cec9; font-size: 11px; }.run-artifact-guidance.warning { border-color: #eccb53; color: #f2d983; }
 @media (max-width: 900px) { .claim-heading, .diagnosis-header { display: block; }.claim-heading button { margin-top: 12px; }.claim-form, .variable-grid, .artifact-editor { grid-template-columns: 1fr; }.existing-results article { grid-template-columns: 1fr; }.diagnosis-header > div:last-child { margin-top: 12px; } }
 @media (max-width: 900px) { .plan-heading, .source-text, .dataset-grid, .controls-grid, .artifact-plan-grid, .plot-config, .run-registration { grid-template-columns: 1fr; }.plot-heading, .upload-panel { display: grid; grid-template-columns: 1fr; }.baseline-grid, .metric-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.quality-report article, .plot-checks article { grid-template-columns: 1fr; }.quality-report article small, .plot-checks small { grid-column: 1; } }
 @media (max-width: 640px) { .claim-workspace { padding: 55px 20px; }.project-toolbar, .proof-grid { grid-template-columns: 1fr; }.requirement-list > article, .experiment-list > article { padding: 17px; }.requirement-list > article > header { grid-template-columns: 45px 1fr; }.requirement-list > article > header select { grid-column: 2; }.assessment-boundary { display: grid; }.claim-selector { grid-template-columns: 1fr; }.quality-report > header { display: block; } }

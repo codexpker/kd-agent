@@ -1,4 +1,4 @@
-.PHONY: install infra-install run test frontend-build migrate r2-accept
+.PHONY: install infra-install run test frontend-build migrate r2-accept demo-accept-offline demo-accept
 
 install:
 	python -m pip install -e './backend[dev]'
@@ -21,3 +21,9 @@ migrate:
 
 r2-accept:
 	cd backend && python -m app.cli.r2_acceptance
+
+demo-accept-offline:
+	cd backend && python -m app.cli.demo_acceptance
+
+demo-accept:
+	cd backend && python -m app.cli.demo_acceptance --with-infrastructure
