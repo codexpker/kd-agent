@@ -4,9 +4,11 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 
 const route = useRoute()
 const apiReady = ref(false)
+const paperMode = computed(() => route.path.startsWith('/papers/'))
 
 const sectionLabel = computed(() => {
   if (route.path === '/assistant') return '科研助理'
+  if (route.path.startsWith('/papers') && route.query.tab === 'graph') return '论文证据关系'
   if (route.path.startsWith('/papers')) return '论文逆向工程'
   if (route.path === '/workspace') return '专业工作区'
   return 'KD Agent'
@@ -23,7 +25,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'paper-mode': paperMode }">
     <aside class="app-sidebar">
       <RouterLink class="app-brand" to="/assistant">
         <span class="brand-mark">KD</span>
@@ -73,6 +75,14 @@ onMounted(async () => {
 .integrity-card { margin-top: auto; padding: 15px; border: 1px solid #dfe4df; border-radius: 13px; background: #f1f4ef; }.integrity-card b { font-size: 11px; }.integrity-card p { margin: 7px 0 0; color: #6f7d75; font-size: 10px; line-height: 1.45; }
 .app-stage { min-width: 0; }.app-header { height: 66px; display: flex; justify-content: space-between; align-items: center; padding: 0 28px; border-bottom: 1px solid #dfe4df; background: rgba(251, 252, 250, .94); position: sticky; top: 0; z-index: 15; backdrop-filter: blur(12px); }.app-header > div:first-child { display: grid; }.app-header span { color: #8a968f; font-size: 9px; letter-spacing: 1.3px; }.app-header b { margin-top: 2px; font-size: 14px; }.runtime-status { padding: 7px 10px; border: 1px solid #c8d5cd; border-radius: 99px; color: #52645a; font-size: 10px; }.runtime-status i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #47a76b; }.runtime-status.offline i { background: #e06c47; }
 .app-content { min-width: 0; }
+.app-shell.paper-mode { grid-template-columns: 76px minmax(0, 1fr); }
+.paper-mode .app-sidebar { padding: 18px 9px; }
+.paper-mode .app-brand { justify-content: center; padding-inline: 0; }
+.paper-mode .app-brand > span:last-child { display: none; }
+.paper-mode .app-sidebar nav p, .paper-mode .app-sidebar nav a { font-size: 0; }
+.paper-mode .app-sidebar nav a { justify-content: center; }
+.paper-mode .app-sidebar nav a span { font-size: 10px; }
+.paper-mode .integrity-card { display: none; }
 @media (max-width: 900px) { .app-shell { grid-template-columns: 76px minmax(0, 1fr); }.app-sidebar { padding: 18px 9px; }.app-brand > span:last-child, .app-sidebar nav p, .app-sidebar nav a:not(.router-link-active) { font-size: 0; }.app-sidebar nav a { justify-content: center; }.app-sidebar nav a span { font-size: 10px; }.integrity-card { display: none; } }
 @media (max-width: 640px) { .app-shell { display: block; }.app-sidebar { position: static; width: 100%; height: auto; flex-direction: row; padding: 8px; overflow-x: auto; }.app-brand, .integrity-card, .app-sidebar nav p { display: none; }.app-sidebar nav { display: flex; }.app-sidebar nav a { white-space: nowrap; font-size: 11px !important; }.app-header { top: 0; padding: 0 15px; } }
 </style>

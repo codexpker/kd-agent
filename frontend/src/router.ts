@@ -19,6 +19,6 @@ export const router = createRouter({
     { path: '/opportunities', redirect: { path: '/workspace', hash: '#opportunities' } },
     { path: '/projects', redirect: { path: '/workspace', hash: '#project-claim' } },
     { path: '/experiments', redirect: { path: '/workspace', hash: '#project-claim' } },
-    { path: '/knowledge-graph', redirect: { path: '/assistant', query: { panel: 'graph' } } },
+    { path: '/knowledge-graph', redirect: { name: 'paper-reader', params: { paperId: 'anomaly-transformer-2022' }, query: { tab: 'graph' } } },
   ],
 })

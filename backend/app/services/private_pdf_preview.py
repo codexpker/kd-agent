@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from app.models import DocumentArtifact, DocumentStructure
+from app.models import DocumentArtifact, DocumentStructure, Section
 
 
 class PrivatePdfPreviewError(RuntimeError):
@@ -42,6 +42,7 @@ class PrivatePdfPreviewService:
         structure: DocumentStructure,
         page_number: int,
         artifact: DocumentArtifact | None = None,
+        section: Section | None = None,
     ) -> bytes:
         if structure.source != "parsed_pdf" or not structure.file_sha256:
             raise PrivatePdfPreviewError("a persisted parsed_pdf structure is required")
@@ -70,6 +71,8 @@ class PrivatePdfPreviewService:
                 page = document[page_number - 1]
                 if artifact is not None:
                     self._draw_artifact_highlight(page, artifact)
+                if section is not None and section.heading_bbox:
+                    self._draw_highlights(page, [section.heading_bbox])
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), alpha=False)
                 return pixmap.tobytes("png")
         except PrivatePdfPreviewError:
@@ -79,9 +82,13 @@ class PrivatePdfPreviewService:
 
     @staticmethod
     def _draw_artifact_highlight(page: object, artifact: DocumentArtifact) -> None:
+        boxes = [item for item in (artifact.bbox, artifact.caption_bbox) if item]
+        PrivatePdfPreviewService._draw_highlights(page, boxes)
+
+    @staticmethod
+    def _draw_highlights(page: object, boxes: list[list[float]]) -> None:
         import fitz
 
-        boxes = [item for item in (artifact.bbox, artifact.caption_bbox) if item]
         for coordinates in boxes:
             if len(coordinates) != 4:
                 continue

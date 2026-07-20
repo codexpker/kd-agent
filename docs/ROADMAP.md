@@ -111,20 +111,27 @@
   - [x] 科研助理提供拆解论文、分析研究机会、诊断Claim和生成实验图表四类任务入口，以执行步骤、证据侧栏和结构化工作区承载结果，不把聊天文本作为唯一产物。
   - [x] 当前自然语言入口明确标记为`离线规则导航`，只做意图分流和澄清；未连接模型时不冒充多轮智能体或大模型推理。
   - [x] 新增`GET /api/v1/papers/{paper_id}/evidence-graph`；默认`gold_snapshot`保持离线，显式`neo4j`模式延迟加载驱动并返回真实可重建索引，失败时503且不静默伪造。
-  - [x] 前端以可读证据列表为主、局部SVG关系图为辅，显示数据来源、未核验状态和MySQL权威边界；真实Neo4j容器查询通过30节点/65关系验收。
+  - [x] 前端以可读证据列表和按Claim裁剪的关系路径为主，显示数据来源、未核验状态和MySQL权威边界；真实Neo4j容器查询通过30节点/65关系验收。
   - [x] Playwright黄金流程增加科研助理、四类任务、证据链步骤和关系图可见性检查，同时继续覆盖R4真实数据绘图闭环。
 - [x] 建立第一篇可演示的论文逆向工程阅读器，保留PDF阅读与文献关系探索能力但不复制竞品界面。
-  - [x] 新增`/papers/{paper_id}`独立路由，把文档结构、科研叙事链、Claim、实验意图、Figure/Table角色、EvidenceAnchor和局部关系图组织为三栏审核界面。
+  - [x] 新增`/papers/{paper_id}`独立路由；经真实浏览器验收后从不可读的三栏布局收敛为论文优先双栏工作区，左侧承载大幅真实页图，右侧统一承载核心链、实验、图表、证据与关系路径。
   - [x] 阅读器复用`paper-deconstruct`、`document-structure`和`evidence-graph`真实接口，不以聊天文本重新生成或改写结构化事实；未知或未公开记录继续返回并显示不可加载。
   - [x] `DocumentStructure`客观版面与`PaperDeconstruction`科研语义保持分区；`gold_snapshot`状态明确阻断PDF定位，不显示未核验页码、图注、bbox或正文引用，也不提供PDF文件分发端点。
   - [x] 提供离线规则式阅读问题导航、Claim筛选和证据透镜联动；关系图只作为局部闭合检查，EvidenceAnchor列表仍是主要审核界面。
-  - [x] Playwright黄金流程覆盖8步叙事链、2项实验意图、5张图表角色、按Claim聚焦的10个局部证据节点以及未授权PDF定位硬阻断。
+  - [x] Playwright黄金流程覆盖9阶段核心链、8步叙事动作、2项实验意图、5张图表角色、按Claim聚焦的关系路径以及未授权PDF定位硬阻断。
 - [x] 完成Anomaly Transformer单篇真实解析演示加固（不等于Gold完成）。
   - [x] 新增默认关闭、仅本地模式可启用的受控PDF预览；服务只在配置根目录中按MySQL SHA-256匹配私有副本，只返回即时PNG，响应`private, no-store`，不暴露路径、不提供原PDF下载。
   - [x] 点击章节或EvidenceAnchor可联动真实解析页；Figure/Table优先显示自动检测的对象/图注框、真实解析图注与正文引用，加载失败明确报错而不显示占位成功图。
   - [x] 开发语义记录改为中文可读转述，并与`pymupdf自动解析（待复核）`客观版面事实分栏显示；人工核验仍为0/10，不把自动解析写成双人Gold。
   - [x] 科研助理默认用纵向路径卡展示一个Claim、支撑实验/图表和相关EvidenceAnchor；论文阅读器保留显示`支撑/依据`语义的10节点局部图。Neo4j真实返回30节点/65关系，MySQL仍为权威源。
   - [x] 真实接口验收通过：`parsed_pdf`、`neo4j`和受控PNG均来自本地服务；星辰配置为空，助手继续明确显示`offline`，没有把Mock或规则回答伪装成线上模型调用。
+- [x] 完成汇报前核心演示链路可用性加固（星辰接入继续后推）。
+  - [x] 论文路由自动收起全局侧栏，真实页图在1280×720浏览器中获得约674px工作宽度；支持70%–180%缩放、翻页、章节抽屉与独立滚动，不再把PDF压缩为约231px缩略图。
+  - [x] 新增章节预览端点，使用持久化`heading_bbox`在哈希匹配的私有副本页图上绘制定位框；Figure/Table继续使用对象框或图注框，不返回原PDF。
+  - [x] 右侧显式展示`Problem → Gap → Hypothesis → Method → Claim → Experiment → Figure/Table → Evidence → Boundary`九阶段视图；每个阶段只映射已有实体，Hypothesis明确复用待检验的method Claim而不新增事实。
+  - [x] 修正开发种子中与真实PDF不一致的Figure角色：Figure 1为模型架构、Figure 2为极小极大学习、Figure 5为异常准则定性案例；更新后10/10 EvidenceAnchor均可匹配自动解析章节或图表，但仍为0/10双人核验。
+  - [x] Neo4j以当前Claim的`SUPPORTS`/`SUPPORTED_BY`纵向路径呈现，显示真实`neo4j`来源、30节点/65关系和MySQL权威边界；图索引失败时阅读器显式降级，不连带阻断PDF与证据阅读。
+  - [x] `/knowledge-graph`导航直接进入同一论文工作区的Neo4j路径页，不再跳到无效的助手查询参数。
 - [x] 建立论文拆解会话、工具运行历史和星辰真实协议适配基础闭环（不代表星辰线上调用已验证）。
   - [x] 新增创建/读取会话与发送消息API，保存`session_id`、`trace_id`、提示词版本、消息来源、EvidenceAnchor和实际工具运行；当前明确为`process_memory`，API重启后清空。
   - [x] 本轮只编排`paper_deconstruct`、`document_structure`和`evidence_graph`，工具选择由可测试的服务端规则完成，不宣称模型已自主规划工具。

@@ -782,3 +782,20 @@ def document_preview_artifact(paper_id: str, artifact_id: str) -> Response:
     except PrivatePdfPreviewError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _private_preview_response(payload, structure)
+
+
+@router.get("/papers/{paper_id}/document-preview/sections/{section_id}")
+def document_preview_section(paper_id: str, section_id: str) -> Response:
+    structure, settings = _private_preview_structure(paper_id)
+    section = next((item for item in structure.sections if item.id == section_id), None)
+    if section is None or section.page_start is None:
+        raise HTTPException(status_code=404, detail="No parsed section preview")
+    try:
+        payload = PrivatePdfPreviewService(settings.private_pdf_preview_root).render_page(
+            structure, section.page_start, section=section
+        )
+    except PrivatePdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PrivatePdfPreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _private_preview_response(payload, structure)

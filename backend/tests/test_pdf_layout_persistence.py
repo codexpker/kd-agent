@@ -20,7 +20,7 @@ from app import api as api_module
 from app.cli import ingest_pdf as ingest_pdf_cli
 from app.gold_dataset import GoldDataset
 from app.main import app
-from app.models import DocumentArtifact, DocumentStructure
+from app.models import DocumentArtifact, DocumentStructure, Section
 from app.pdf.contracts import (
     ParsedArtifact,
     ParsedDocument,
@@ -516,7 +516,16 @@ def test_private_pdf_preview_api_is_local_hash_bound_and_never_returns_raw_pdf(
         parser_version="test",
         file_sha256=digest,
         page_count=1,
-        sections=[],
+        sections=[
+            Section(
+                id="sec-1",
+                title="Introduction",
+                level=1,
+                page_start=1,
+                page_end=1,
+                heading_bbox=[65.0, 50.0, 310.0, 90.0],
+            )
+        ],
         artifacts=[
             DocumentArtifact(
                 id="art-1",
@@ -550,6 +559,14 @@ def test_private_pdf_preview_api_is_local_hash_bound_and_never_returns_raw_pdf(
     assert response.headers["x-kd-preview"] == "local-private-copy"
     assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
     assert not response.content.startswith(b"%PDF")
+
+    section_response = TestClient(app).get(
+        "/api/v1/papers/paper-1/document-preview/sections/sec-1"
+    )
+    assert section_response.status_code == 200
+    assert section_response.headers["content-type"] == "image/png"
+    assert section_response.headers["cache-control"] == "private, no-store"
+    assert section_response.content.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_private_pdf_preview_api_is_disabled_by_default(

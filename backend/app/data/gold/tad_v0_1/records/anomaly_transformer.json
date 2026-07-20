@@ -7,12 +7,12 @@
   "status": "development_seed",
   "narrative_moves": [
     {"id":"nm-1","order":1,"move":"提出问题","purpose":"说明为什么无监督多变量时间序列异常检测值得研究。","evidence_ids":["ev-1"]},
-    {"id":"nm-2","order":2,"move":"指出逐点重构的不足","purpose":"说明只看重构误差可能遗漏变量关系层面的异常信号。","evidence_ids":["ev-2"]},
+    {"id":"nm-2","order":2,"move":"指出逐点表示的不足","purpose":"说明逐点重构或预测误差难以完整描述复杂时间上下文。","evidence_ids":["ev-2"]},
     {"id":"nm-3","order":3,"move":"引入关联差异","purpose":"把先验关联与学习关联之间的差异转化为异常判断信号。","evidence_ids":["ev-3"]},
     {"id":"nm-4","order":4,"move":"处理优化张力","purpose":"用极小极大学习强化正常样本与异常样本的关联差异。","evidence_ids":["ev-4"]},
     {"id":"nm-5","order":5,"move":"验证检测效果","purpose":"在多个基准数据集上与代表性基线比较。","evidence_ids":["ev-5","ev-6"]},
     {"id":"nm-6","order":6,"move":"隔离关键机制","purpose":"检验关联差异与训练策略是否分别产生贡献。","evidence_ids":["ev-7"]},
-    {"id":"nm-7","order":7,"move":"可视化解释","purpose":"让读者检查模型学习到的时间关联以及正常/异常对比。","evidence_ids":["ev-8","ev-9"]},
+    {"id":"nm-7","order":7,"move":"可视化解释","purpose":"让读者检查不同异常类别下重构准则与关联准则的表现。","evidence_ids":["ev-8","ev-9"]},
     {"id":"nm-8","order":8,"move":"声明结论边界","purpose":"把结论限制在论文实际评测的数据集与协议内。","evidence_ids":["ev-10"]}
   ],
   "claims": [
@@ -26,23 +26,23 @@
     {"id":"ex-2","title":"机制消融","question":"哪些组件是观察到性能提升所必需的？","design_reason":"分别移除关联差异或极小极大策略，用来区分所主张机制的贡献与模型容量效应。","variables":["关联差异","极小极大策略","F1"],"supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]}
   ],
   "artifacts": [
-    {"id":"ar-1","artifact_type":"figure","label":"Figure 1","role":"问题动机图","why_here":"在形式化方法之前，先对比正常与异常的关联模式。","supports_claim_ids":["cl-1"],"evidence_ids":["ev-2"]},
-    {"id":"ar-2","artifact_type":"figure","label":"Figure 2","role":"模型架构总览","why_here":"把抽象的关联差异思想映射成可训练流程。","supports_claim_ids":["cl-2"],"evidence_ids":["ev-4"]},
+    {"id":"ar-1","artifact_type":"figure","label":"Figure 1","role":"模型架构总览","why_here":"先展示Anomaly-Attention如何同时建模先验关联与序列关联，再展开公式与训练机制。","supports_claim_ids":["cl-2"],"evidence_ids":["ev-3"]},
+    {"id":"ar-2","artifact_type":"figure","label":"Figure 2","role":"极小极大学习示意","why_here":"用两个训练阶段直观解释关联差异如何被约束与放大。","supports_claim_ids":["cl-2"],"evidence_ids":["ev-4"]},
     {"id":"ar-3","artifact_type":"table","label":"Table 1","role":"主要定量证据","why_here":"集中呈现跨数据集、跨基线的比较，用于支撑主要结果 Claim。","supports_claim_ids":["cl-3"],"evidence_ids":["ev-5"]},
     {"id":"ar-4","artifact_type":"table","label":"Table 2","role":"消融证据","why_here":"展示移除所主张组件后，实验结果是否发生变化。","supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]},
-    {"id":"ar-5","artifact_type":"figure","label":"Figure 4","role":"机制的定性证据","why_here":"让读者直接检查关联图，而不是只依赖汇总分数。","supports_claim_ids":["cl-1","cl-2"],"evidence_ids":["ev-8","ev-9"]}
+    {"id":"ar-5","artifact_type":"figure","label":"Figure 5","role":"异常准则的定性案例","why_here":"并列展示原始序列、重构准则与关联准则，让读者检查不同异常类别下的检测行为。","supports_claim_ids":["cl-1","cl-2"],"evidence_ids":["ev-8","ev-9"]}
   ],
   "evidence": [
     {"id":"ev-1","kind":"section","label":"Introduction","excerpt":"用于说明问题动机与任务设定的开发注释；这是转述，不是论文原句。","page":null,"verified":false},
-    {"id":"ev-2","kind":"figure","label":"Figure 1","excerpt":"用于对比正常与异常时间关联的概念图；仍需依据授权 PDF 进行人工复核。","page":null,"verified":false},
-    {"id":"ev-3","kind":"section","label":"Association Discrepancy","excerpt":"关于关联差异定义及其作为异常信号用途的开发注释；这是转述。","page":null,"verified":false},
+    {"id":"ev-2","kind":"section","label":"Introduction","excerpt":"关于逐点表示及逐点重构或预测误差局限的开发转述；不是论文原句。","page":null,"verified":false},
+    {"id":"ev-3","kind":"figure","label":"Figure 1","excerpt":"Anomaly Transformer总体架构及先验关联、序列关联双分支的开发转述；仍需人工复核。","page":null,"verified":false},
     {"id":"ev-4","kind":"section","label":"Minimax Association Learning","excerpt":"关于极小极大学习优化理由的开发注释；这是转述。","page":null,"verified":false},
     {"id":"ev-5","kind":"table","label":"Table 1","excerpt":"作者报告的主要基准对比；在人工核验前刻意不转录具体数值。","page":null,"verified":false},
     {"id":"ev-6","kind":"section","label":"Main Results","excerpt":"作者对定量比较的解释，仍需回到原文复核。","page":null,"verified":false},
     {"id":"ev-7","kind":"table","label":"Table 2","excerpt":"组件消融的开发摘要；人工核验前刻意不转录具体数值。","page":null,"verified":false},
-    {"id":"ev-8","kind":"figure","label":"Figure 4","excerpt":"模型学习关联的可视化；其科研叙事角色仍需第二位标注员复核。","page":null,"verified":false},
-    {"id":"ev-9","kind":"section","label":"Case Study","excerpt":"连接关联模式与异常检测结果的定性讨论。","page":null,"verified":false},
-    {"id":"ev-10","kind":"section","label":"Evaluation Boundary","excerpt":"结论覆盖范围受所评测数据集与协议限制；这是开发阶段加入的边界说明。","page":null,"verified":false}
+    {"id":"ev-8","kind":"figure","label":"Figure 5","excerpt":"不同异常类别下原始序列、重构准则与关联准则的可视化；其叙事角色仍需第二位标注员复核。","page":null,"verified":false},
+    {"id":"ev-9","kind":"section","label":"Model Analysis","excerpt":"连接异常准则可视化与模型机制解释的开发转述。","page":null,"verified":false},
+    {"id":"ev-10","kind":"section","label":"Limitations and Future Work","excerpt":"结论覆盖范围受所评测数据集与协议限制；这是开发阶段加入的边界说明。","page":null,"verified":false}
   ],
   "limitations": [
     "当前重建记录只是单人开发种子，不是已冻结的 Gold 数据。",
