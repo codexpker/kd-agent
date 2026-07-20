@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import AssistantView from './views/AssistantView.vue'
+import PaperReaderView from './views/PaperReaderView.vue'
 import ResearchWorkspaceView from './views/ResearchWorkspaceView.vue'
 
 export const router = createRouter({
@@ -12,8 +13,9 @@ export const router = createRouter({
   routes: [
     { path: '/', redirect: '/assistant' },
     { path: '/assistant', name: 'assistant', component: AssistantView },
+    { path: '/papers/:paperId', name: 'paper-reader', component: PaperReaderView },
     { path: '/workspace', name: 'workspace', component: ResearchWorkspaceView },
-    { path: '/papers', redirect: { path: '/workspace', hash: '#papers' } },
+    { path: '/papers', redirect: '/papers/anomaly-transformer-2022' },
     { path: '/opportunities', redirect: { path: '/workspace', hash: '#opportunities' } },
     { path: '/projects', redirect: { path: '/workspace', hash: '#project-claim' } },
     { path: '/experiments', redirect: { path: '/workspace', hash: '#project-claim' } },

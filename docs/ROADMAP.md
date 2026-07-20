@@ -113,5 +113,11 @@
   - [x] 新增`GET /api/v1/papers/{paper_id}/evidence-graph`；默认`gold_snapshot`保持离线，显式`neo4j`模式延迟加载驱动并返回真实可重建索引，失败时503且不静默伪造。
   - [x] 前端以可读证据列表为主、局部SVG关系图为辅，显示数据来源、未核验状态和MySQL权威边界；真实Neo4j容器查询通过30节点/65关系验收。
   - [x] Playwright黄金流程增加科研助理、四类任务、证据链步骤和关系图可见性检查，同时继续覆盖R4真实数据绘图闭环。
+- [x] 建立第一篇可演示的论文逆向工程阅读器，保留PDF阅读与文献关系探索能力但不复制竞品界面。
+  - [x] 新增`/papers/{paper_id}`独立路由，把文档结构、科研叙事链、Claim、实验意图、Figure/Table角色、EvidenceAnchor和局部关系图组织为三栏审核界面。
+  - [x] 阅读器复用`paper-deconstruct`、`document-structure`和`evidence-graph`真实接口，不以聊天文本重新生成或改写结构化事实；未知或未公开记录继续返回并显示不可加载。
+  - [x] `DocumentStructure`客观版面与`PaperDeconstruction`科研语义保持分区；`gold_snapshot`状态明确阻断PDF定位，不显示未核验页码、图注、bbox或正文引用，也不提供PDF文件分发端点。
+  - [x] 提供离线规则式阅读问题导航、Claim筛选和证据透镜联动；关系图只作为局部闭合检查，EvidenceAnchor列表仍是主要审核界面。
+  - [x] Playwright黄金流程覆盖8步叙事链、2项实验意图、5张图表角色、21个局部证据节点以及未授权PDF定位硬阻断。
 - [ ] 下一阶段：接入真实星火或开源模型的会话/工具调用层，保存对话与任务运行历史，并保持离线规则导航为可识别的降级模式；完成前不得宣称已具备真实多轮智能体能力。
 - [ ] 后续：接入真正的认证身份、受信任外部核验者工作流和加密对象存储；在此之前不得把自报身份或`pending_external_verification`写成已认证/已验证。

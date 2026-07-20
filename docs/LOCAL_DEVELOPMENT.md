@@ -74,12 +74,18 @@ npm run dev
 页面入口：
 
 - `http://127.0.0.1:5173/assistant`：默认科研助理入口，包含任务导航、执行步骤、EvidenceAnchor和局部关系图。
+- `http://127.0.0.1:5173/papers/anomaly-transformer-2022`：独立论文逆向工程阅读器，包含结构索引、叙事链、实验意图、Figure/Table角色、证据透镜与局部关系图。
 - `http://127.0.0.1:5173/workspace`：论文拆解、研究机会、Project Claim、实验计划与绘图的完整专业编辑器。
 - `http://127.0.0.1:5173/knowledge-graph`：导航到科研助理的关系图面板。
 
 当前科研助理是明确标记的离线规则导航：它按自然语言关键词选择现有确定性工具并在不能可靠识别
 意图时要求澄清，没有连接模型时不会伪装成大模型推理。对话负责推进任务，结构化工作区继续保存
 版本、证据和可复现产物。
+
+论文阅读器同时请求`paper-deconstruct`、`document-structure`和`evidence-graph`三条接口。语义拆解与
+客观版面在界面中分栏展示：`gold_snapshot`只提供结构名称与角色卡，PDF定位按钮保持禁用；只有
+`DOCUMENT_STRUCTURE_BACKEND=mysql`返回带权利记录的`parsed_pdf`时，才显示解析器、文件哈希和可核验
+页码。当前页面没有PDF文件传输端点，因此不会通过前端绕过全文权利门禁。
 
 ## 完整基础设施
 

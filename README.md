@@ -2,7 +2,7 @@
 
 面向科研新手的论文逆向工程助手。核心链路：
 
-`Problem → Gap → Claim → Experiment → Figure/Table → Evidence → Boundary`
+`Problem → Gap → Hypothesis → Method → Claim → Experiment → Figure/Table → Evidence → Boundary`
 
 本版本依据项目对话与方案记录重建，默认采用离线 Gold 数据，可直接运行；MySQL、Milvus、Neo4j、PDF 解析和讯飞星辰均作为可替换基础设施保留接口。
 
@@ -29,6 +29,11 @@ npm run dev
 
 访问 <http://localhost:5173>，默认进入“科研助理”对话式工作台；原有完整结构化编辑器移动到
 <http://localhost:5173/workspace>。API 文档位于 <http://localhost:8000/docs>。
+
+首篇论文逆向工程阅读器位于
+<http://localhost:5173/papers/anomaly-transformer-2022>。它把文档结构、科研叙事链、Claim、实验意图、
+Figure/Table角色和EvidenceAnchor放在同一审核界面。当前默认数据是`development_seed + gold_snapshot`：
+没有已登记的授权解析结果时，页面不会分发原PDF，也不会显示伪造页码、图注、bbox或正文引用。
 
 科研助理首页使用自然语言和四类任务卡导航现有确定性科研工具，右侧固定展示EvidenceAnchor和
 局部关系图。默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把

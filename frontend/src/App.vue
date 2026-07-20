@@ -7,6 +7,7 @@ const apiReady = ref(false)
 
 const sectionLabel = computed(() => {
   if (route.path === '/assistant') return '科研助理'
+  if (route.path.startsWith('/papers')) return '论文逆向工程'
   if (route.path === '/workspace') return '专业工作区'
   return 'KD Agent'
 })

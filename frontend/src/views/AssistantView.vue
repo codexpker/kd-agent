@@ -313,7 +313,7 @@ onMounted(async () => {
               <span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ item.verified ? 'verified' : 'unverified' }}</small></div>
             </button>
           </div>
-          <RouterLink to="/papers">打开完整论文工作区 →</RouterLink>
+          <RouterLink :to="`/papers/${paperId}`" data-testid="open-paper-reader">打开论文逆向工程阅读器 →</RouterLink>
         </div>
 
         <div v-else class="graph-panel">
