@@ -8,40 +8,10 @@
   "source_rights_basis": "open_full_text",
   "annotation_status": "draft",
   "annotators": [
-    {"annotator_id": "annotator-a", "role": "annotator"},
-    {"annotator_id": "annotator-b", "role": "annotator"}
+    {"annotator_id": "replace-with-one-independent-annotator-id", "role": "annotator"}
   ],
-  "annotation_notes": "Replace every placeholder. Annotators work independently before adjudication.",
-  "sections": [
-    {
-      "id": "sec-stable-id",
-      "title": "Exact visible heading",
-      "level": 1,
-      "page_start": 1,
-      "page_end": 1,
-      "heading_bbox": null
-    }
-  ],
-  "artifacts": [
-    {
-      "id": "artifact-stable-id",
-      "artifact_type": "figure",
-      "label": "Figure 1",
-      "caption": "Exact visible caption",
-      "page": 1,
-      "bbox": null,
-      "caption_bbox": null,
-      "markdown": null,
-      "table_data": null
-    }
-  ],
-  "references": [
-    {
-      "id": "reference-stable-id",
-      "artifact_id": "artifact-stable-id",
-      "text": "Exact sentence or line containing the reference.",
-      "page": 1,
-      "bbox": null
-    }
-  ]
+  "annotation_notes": "Template only. Replace provenance placeholders after authorization, then annotate independently without copying parser output or another annotator's file.",
+  "sections": [],
+  "artifacts": [],
+  "references": []
 }

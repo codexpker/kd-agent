@@ -1,0 +1,57 @@
+{
+  "schema_version": "layout-gold-case-v1",
+  "case_id": "anomaly-transformer-2022-layout-gold-v1",
+  "paper_id": "anomaly-transformer-2022",
+  "title": "Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy",
+  "workflow_status": "blocked",
+  "rights_status": "needs_authorized_pdf",
+  "annotation_status": "needs_second_annotator",
+  "source": null,
+  "annotator_a_id": null,
+  "annotator_b_id": null,
+  "adjudicator_id": null,
+  "parser_candidates": [
+    {
+      "parser_name": "pymupdf",
+      "status": "blocked_missing_authorized_pdf",
+      "parser_version": null,
+      "relative_path": null,
+      "error": null
+    },
+    {
+      "parser_name": "grobid",
+      "status": "blocked_missing_authorized_pdf",
+      "parser_version": null,
+      "relative_path": null,
+      "error": null
+    },
+    {
+      "parser_name": "mineru",
+      "status": "blocked_missing_authorized_pdf",
+      "parser_version": null,
+      "relative_path": null,
+      "error": null
+    }
+  ],
+  "blockers": [
+    "No user-provided, open-licensed or institution-authorized PDF exists in the workspace.",
+    "MySQL has no PdfSource for this paper; its only PaperSource is metadata_only with full_text_rights_confirmed=false.",
+    "A distinct second annotator and an independent adjudicator have not been registered."
+  ],
+  "next_actions": [
+    "A team member supplies a lawful PDF copy without committing it to Git.",
+    "Record source description or official URL, rights basis, confirmer and rights note.",
+    "Run layout_gold_workflow prepare to hash the exact file and create a blank independent annotation case.",
+    "Register two distinct annotators; neither copies the other annotation file or parser output.",
+    "Generate versioned PyMuPDF, GROBID and MinerU candidates for the same SHA-256.",
+    "Import both annotation files to create an unresolved diff and adjudication template.",
+    "Register an independent adjudicator and resolve every difference before producing adjudicated Gold.",
+    "Run the three-parser evaluation and add error-type analysis; do not report synthetic scores as real."
+  ],
+  "git_exclusions": [
+    "Original PDF",
+    "Rendered page images",
+    "Extracted figures without redistribution permission",
+    "Local absolute file paths"
+  ]
+}

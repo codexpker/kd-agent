@@ -195,6 +195,84 @@ python -m app.cli.evaluate_pdf_layout \
 表格、行、列和规范化文本计算的单元格F1。章节和图表检测分别用规范化标题与标签匹配；报告中
 保留该口径，后续若采用模糊匹配必须提升Schema版本并重新跑基线。
 
+### Step 4b 第一篇真实版面Gold工作流与质控
+
+2026-07-20本地审计结论：工作区没有Anomaly Transformer PDF；MySQL没有该论文的`PdfSource`
+或解析运行，唯一PaperSource为`metadata_only`且`full_text_rights_confirmed=false`。仓库也没有
+第二标注员或仲裁员身份记录。因此当前案例同时保持`rights_status=needs_authorized_pdf`、
+`annotation_status=needs_second_annotator`和`workflow_status=blocked`，没有真实版面Gold或真实
+解析器成绩。阻塞清单与数据清单分别位于：
+
+- `backend/app/data/evaluation/anomaly_transformer_layout_gold_manifest.json`
+- `backend/app/data/evaluation/layout_gold_inventory.json`
+
+不得为解除阻塞从来源不明的网站下载PDF。团队成员提供私有合法副本时，`source_uri`留空并填写
+来源说明；开放全文只记录官方HTTP(S)来源。工具不接受本地路径作为来源URI，也不会把PDF路径写入
+案例文件。初始化默认dry-run；只有`--commit`才写结构化工作文件，原PDF始终不复制：
+
+```bash
+cd backend
+python -m app.cli.layout_gold_workflow prepare \
+  anomaly-transformer-2022 /private/path/anomaly-transformer.pdf \
+  --title "Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy" \
+  --source-description "User-provided private copy" \
+  --rights-basis user_private_copy \
+  --confirmed-by team-member-id \
+  --annotator-a reviewer-a \
+  --output-dir /private/work/anomaly-transformer-layout
+```
+
+该命令计算精确文件SHA-256和页数，记录PyMuPDF版本并生成PyMuPDF候选，但A/B标注文件为空，
+不会用解析器结果预填人工答案。缺少B时返回退出码2，案例停在`needs_second_annotator`。确认真实且
+不同的B后再显式注册；工具只创建B自己的空白文件，不覆盖A：
+
+```bash
+python -m app.cli.layout_gold_workflow register-second-annotator \
+  --manifest /private/work/anomaly-transformer-layout/case_manifest.json \
+  --annotator-b reviewer-b \
+  --commit
+```
+
+GROBID必须开启`head`、`figure`、`ref`坐标并记录服务版本；MinerU必须固定版本并保留输出类型。
+外部原始输出不复制进案例目录，只导入统一契约：
+
+```bash
+python -m app.cli.layout_gold_workflow import-candidate \
+  --manifest /private/work/anomaly-transformer-layout/case_manifest.json \
+  --parser grobid \
+  --parser-version 0.x.y \
+  --input /private/output/anomaly-transformer.tei.xml \
+  --commit
+```
+
+#### 独立标注质控
+
+1. A和B文件各自只能有一个`role=annotator`身份，状态保持`draft`；两人不得互看、复制或共同编辑。
+2. 两份文件必须引用同一`paper_id`、PDF SHA-256、页数和权利依据；不一致时导入直接失败。
+3. 稳定ID按可见事实维护：章节使用`sec-*`，图表使用可核验标签，正文引用必须指向文件内图表ID。
+4. 标注章节标题/层级/页码范围/标题bbox、Figure/Table标签/页码/bbox/图注/图注bbox、正文引用
+   文本/目标/页码/bbox，以及可核验的表格二维单元格；看不清时留空或记录问题，不猜测。
+5. 导入工具按稳定ID生成`missing_in_a`、`missing_in_b`和逐字段`field_mismatch`，保存两份标注内容
+   哈希；它不修改A/B，不选择胜者，也不自动生成最终Gold。
+6. 即使差异数为0，仍需独立仲裁员签字；仲裁模板默认所有决策为空、`status=pending`、
+   `final_gold_status=not_generated`。仲裁完成前不得使用`frozen`或运行真实成绩发布流程。
+
+```bash
+python -m app.cli.layout_gold_workflow import-annotations \
+  --manifest /private/work/anomaly-transformer-layout/case_manifest.json \
+  --annotator-a /private/work/anomaly-transformer-layout/annotations/annotator_a.json \
+  --annotator-b /private/work/anomaly-transformer-layout/annotations/annotator_b.json \
+  --output-dir /private/work/anomaly-transformer-layout/review \
+  --commit
+```
+
+仲裁后的真实评测除总分外，错误分析至少分类为：章节漏检/误检/层级错误，Figure/Table漏检/误检，
+图注截断/OCR错误，页码偏移，正文引用漏检/目标错误，以及表格行列合并、拆分和跨页/跨单元格错误。
+当前这些条目仍是待办，不能用合成冒烟结果代替。
+
+Git只允许提交案例清单、最终可再分发的结构化Gold、评测报告和质控记录；原PDF、渲染页、无权
+再分发的原图、临时外部解析输出和任何本地绝对路径都禁止提交。
+
 使用 MySQL 文档结构读模型时，将 `.env` 中的配置切换为：
 
 ```dotenv

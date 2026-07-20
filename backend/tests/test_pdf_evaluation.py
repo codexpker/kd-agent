@@ -346,13 +346,19 @@ def test_real_adjudication_requires_a_distinct_adjudicator() -> None:
     payload = json.loads(
         fixture_root.joinpath("layout_gold_template.json").read_text(encoding="utf-8")
     )
+    payload["annotators"].append(
+        {"annotator_id": "annotator-b", "role": "annotator"}
+    )
     payload["annotation_status"] = "adjudicated"
 
     with pytest.raises(ValidationError, match="requires an adjudicator"):
         LayoutGold.model_validate(payload)
 
     payload["annotators"].append(
-        {"annotator_id": "annotator-a", "role": "adjudicator"}
+        {
+            "annotator_id": payload["annotators"][0]["annotator_id"],
+            "role": "adjudicator",
+        }
     )
     with pytest.raises(ValidationError, match="must be distinct"):
         LayoutGold.model_validate(payload)

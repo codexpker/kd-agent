@@ -1,0 +1,16 @@
+{
+  "schema_version": "layout-gold-inventory-v1",
+  "updated_on": "2026-07-20",
+  "cases": [
+    {
+      "paper_id": "anomaly-transformer-2022",
+      "case_manifest": "anomaly_transformer_layout_gold_manifest.json",
+      "rights_status": "needs_authorized_pdf",
+      "annotation_status": "needs_second_annotator",
+      "adjudication_status": "not_started",
+      "real_gold_available": false,
+      "real_parser_evaluation_available": false,
+      "pdf_committed_to_git": false
+    }
+  ]
+}
