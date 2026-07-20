@@ -27,7 +27,13 @@ npm install
 npm run dev
 ```
 
-访问 <http://localhost:5173>，API 文档位于 <http://localhost:8000/docs>。
+访问 <http://localhost:5173>，默认进入“科研助理”对话式工作台；原有完整结构化编辑器移动到
+<http://localhost:5173/workspace>。API 文档位于 <http://localhost:8000/docs>。
+
+科研助理首页使用自然语言和四类任务卡导航现有确定性科研工具，右侧固定展示EvidenceAnchor和
+局部关系图。默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把
+开发种子冒充Neo4j查询结果。安装基础设施依赖、启动Neo4j并将该配置改为`neo4j`后，右侧关系图
+改为读取真实Neo4j可重建索引；MySQL仍是权威事实源。
 
 ## 验证
 
@@ -74,6 +80,15 @@ python -m app.cli.r2_acceptance
 ```
 
 验收命令会应用新的重建迁移链，连续执行两次Gold→MySQL规范化实体与Neo4j同步，并检查第二次MySQL写入和PaperSource元数据均为`unchanged`、图中节点数不增长。PaperSource按稳定来源键并存，低质量或过期的同键候选不会覆盖已存权威元数据。它只导入已完成的开发记录，`queued`论文仍不会入库。日常运行`python -m app.cli.ingest_gold`默认为零写入dry-run；只有增加`--commit`才写MySQL。
+
+只读证据关系接口：
+
+```http
+GET /api/v1/papers/anomaly-transformer-2022/evidence-graph
+```
+
+返回`source=gold_snapshot`或`source=neo4j`、闭合节点和关系、以及对应来源边界；Neo4j显式模式
+连接失败时返回503，不会静默回退或伪造图数据库结果。
 
 PDF版面事实链路需要可选解析依赖，并且默认只做本地预览：
 

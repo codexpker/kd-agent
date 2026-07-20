@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     retrieval_backend: str = "demo"
     embedding_backend: str = "hash"
     document_structure_backend: str = "gold"
+    evidence_graph_backend: str = "gold"
     project_claim_backend: str = "memory"
     experiment_run_backend: str = "memory"
     cors_origins: str = "http://localhost:5173"

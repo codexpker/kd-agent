@@ -25,8 +25,31 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
   ).toBeTruthy()
   expect(structurePayload.warnings.length).toBeGreaterThan(0)
 
-  await page.goto('/')
-  await expect(page.getByText('离线证据模式', { exact: true })).toBeVisible()
+  const graph = await request.get(
+    `${backendOrigin}/api/v1/papers/anomaly-transformer-2022/evidence-graph`,
+  )
+  expect(graph.ok()).toBeTruthy()
+  const graphPayload = await graph.json()
+  expect(graphPayload.source).toBe('gold_snapshot')
+  expect(graphPayload.nodes).toHaveLength(30)
+  expect(graphPayload.edges).toHaveLength(65)
+
+  await page.goto('/assistant')
+  await expect(page.getByTestId('assistant-shell')).toBeVisible()
+  await expect(page.getByText('API 在线 · 离线证据模式', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('graph-source')).toHaveText('gold_snapshot')
+  await expect(page.getByTestId('quick-task-paper')).toBeVisible()
+  await expect(page.getByTestId('quick-task-opportunity')).toBeVisible()
+  await expect(page.getByTestId('quick-task-claim')).toBeVisible()
+  await expect(page.getByTestId('quick-task-plot')).toBeVisible()
+  await page.getByTestId('run-evidence-demo').click()
+  await expect(page.getByRole('heading', { name: '拆解一篇论文', exact: true })).toBeVisible()
+  await expect(page.locator('.task-status li.done')).toHaveCount(3)
+  await page.getByRole('button', { name: '关系图', exact: true }).click()
+  await expect(page.getByTestId('evidence-graph').locator('svg')).toBeVisible()
+  await expect(page.getByTestId('evidence-graph').locator('svg g')).toHaveCount(22)
+
+  await page.goto('/workspace')
   await expect(page.getByText('开发种子，不是冻结 Gold', { exact: true })).toBeVisible()
   await expect(page.getByText('查询来源：gold_snapshot', { exact: true })).toBeVisible()
 

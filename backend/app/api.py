@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from app.config import get_settings
 from app.gold_dataset import get_gold_dataset
 from app.models import DocumentStructure, PaperDeconstruction, SearchRequest, SearchResponse
+from app.evidence_graph_models import EvidenceGraphResponse
 from app.project_claim_models import (
     EvidenceDiagnosisEditRequest,
     ProjectClaimCreateRequest,
@@ -34,6 +35,12 @@ from app.research_models import ResearchOpportunityRequest, ResearchOpportunityR
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
 from app.services.document_structure import DocumentStructureService
+from app.services.evidence_graph import (
+    EvidenceGraphNotFoundError,
+    EvidenceGraphUnavailableError,
+    GoldEvidenceGraphSource,
+    Neo4jEvidenceGraphSource,
+)
 from app.services.project_claims import (
     InMemoryProjectClaimStore,
     InvalidProjectIdError,
@@ -154,6 +161,36 @@ def healthz() -> dict:
 @router.post("/tools/search", response_model=SearchResponse)
 def search(request: SearchRequest) -> SearchResponse:
     return DemoSearchService(get_gold_dataset()).search(request.query, request.limit)
+
+
+@router.get(
+    "/papers/{paper_id}/evidence-graph", response_model=EvidenceGraphResponse
+)
+def evidence_graph(paper_id: str) -> EvidenceGraphResponse:
+    settings = get_settings()
+    try:
+        if settings.evidence_graph_backend == "gold":
+            return GoldEvidenceGraphSource(get_gold_dataset()).get(paper_id)
+        if settings.evidence_graph_backend == "neo4j":
+            try:
+                from neo4j import GraphDatabase
+            except ImportError as exc:
+                raise EvidenceGraphUnavailableError(
+                    "Neo4j graph backend requires the backend[infra] dependencies"
+                ) from exc
+            with GraphDatabase.driver(
+                settings.neo4j_uri,
+                auth=(settings.neo4j_username, settings.neo4j_password),
+                connection_timeout=2.0,
+            ) as driver:
+                return Neo4jEvidenceGraphSource(driver).get(paper_id)
+        raise EvidenceGraphUnavailableError(
+            f"Unsupported evidence_graph_backend: {settings.evidence_graph_backend}"
+        )
+    except EvidenceGraphNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="evidence graph not found") from exc
+    except EvidenceGraphUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post(

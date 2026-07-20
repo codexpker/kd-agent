@@ -71,6 +71,16 @@ npm install
 npm run dev
 ```
 
+页面入口：
+
+- `http://127.0.0.1:5173/assistant`：默认科研助理入口，包含任务导航、执行步骤、EvidenceAnchor和局部关系图。
+- `http://127.0.0.1:5173/workspace`：论文拆解、研究机会、Project Claim、实验计划与绘图的完整专业编辑器。
+- `http://127.0.0.1:5173/knowledge-graph`：导航到科研助理的关系图面板。
+
+当前科研助理是明确标记的离线规则导航：它按自然语言关键词选择现有确定性工具并在不能可靠识别
+意图时要求澄清，没有连接模型时不会伪装成大模型推理。对话负责推进任务，结构化工作区继续保存
+版本、证据和可复现产物。
+
 ## 完整基础设施
 
 ```bash
@@ -80,6 +90,26 @@ docker compose ps
 ```
 
 默认 `DOCUMENT_STRUCTURE_BACKEND=gold`，不会依赖数据库。
+
+### 证据关系图查询
+
+默认`EVIDENCE_GRAPH_BACKEND=gold`从当前可公开的Gold development seed构造闭合关系图，保持离线
+模式可用；其`source=gold_snapshot`和warnings会直接显示在前端。查询接口：
+
+```http
+GET /api/v1/papers/anomaly-transformer-2022/evidence-graph
+```
+
+要查看真实Neo4j可重建索引，先完成Gold入库和图同步，再在启动API前设置：
+
+```powershell
+$env:EVIDENCE_GRAPH_BACKEND='neo4j'
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
+```
+
+Neo4j模式使用延迟导入，不影响默认离线启动；连接失败、缺少驱动或找不到论文分别明确返回503或
+404，不会回退成伪造的Neo4j结果。前端图谱只展示一到两跳的Paper、Claim、Experiment、Artifact
+和Evidence关系，证据列表仍是主要审核界面；MySQL始终是权威事实源。
 
 ### R2 迁移与幂等入库验收
 
@@ -356,7 +386,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/research/opportunities \
 当前仓库真实离线清单有5篇注册论文，但0篇同时达到`double_annotated/frozen`和已核验证据要求，
 所以默认请求返回HTTP 200、`status=insufficient_evidence`和空候选。八类规则的正向输出仅由
 `synthetic-opportunity-fixture`测试数据验证；该 fixture 不参与运行时语料，也不是实际论文分析成绩。
-前端在`http://127.0.0.1:5173/#opportunities`展示同一查询计划、证据列表和时间线，不绘制知识
+前端在`http://127.0.0.1:5173/workspace#opportunities`展示同一查询计划、证据列表和时间线，不用知识
 图谱大球。
 
 ### 研究假设到实验/图表计划
@@ -391,7 +421,7 @@ Project Claim固定标记`origin=user_supplied`。服务端重新执行同一研
 
 ## R4 Project Claim与证据需求诊断
 
-前端入口为`http://127.0.0.1:5173/#project-claim`。默认配置使用进程内存存储，重启后数据清空：
+前端入口为`http://127.0.0.1:5173/workspace#project-claim`。默认配置使用进程内存存储，重启后数据清空：
 
 ```dotenv
 PROJECT_CLAIM_BACKEND=memory
