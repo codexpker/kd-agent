@@ -36,9 +36,48 @@ type EvidenceGraph = {
   edges: GraphEdge[]
   warnings: string[]
 }
-type ChatMessage = { id: number; role: 'assistant' | 'user'; text: string; meta?: string }
+type ChatMessage = {
+  id: number
+  role: 'assistant' | 'user'
+  text: string
+  meta?: string
+  evidenceIds?: string[]
+  origin?: string
+}
 type TaskStep = { label: string; status: 'pending' | 'running' | 'done' | 'blocked'; detail: string }
 type TaskKind = 'paper' | 'opportunity' | 'claim' | 'plot'
+type AssistantToolRun = {
+  run_id: string
+  tool_name: 'paper_deconstruct' | 'document_structure' | 'evidence_graph'
+  status: 'succeeded' | 'failed'
+  source: string
+  result_summary: string
+  evidence_ids: string[]
+}
+type AssistantSession = {
+  session_id: string
+  trace_id: string
+  paper_id: string
+  backend: 'offline' | 'astron'
+  provider_status: 'ready' | 'unavailable'
+  provider_name: string
+  model_label: string
+  prompt_version: string
+  storage: 'process_memory'
+  messages: unknown[]
+  warnings: string[]
+}
+type AssistantTurn = {
+  status: 'succeeded' | 'error'
+  session: AssistantSession
+  assistant_message: {
+    content: string
+    origin: string
+    evidence_ids: string[]
+  }
+  tool_runs: AssistantToolRun[]
+  warning: string | null
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -48,6 +87,8 @@ const error = ref('')
 const prompt = ref('')
 const paper = ref<Paper | null>(null)
 const graph = ref<EvidenceGraph | null>(null)
+const assistantSession = ref<AssistantSession | null>(null)
+const latestToolRuns = ref<AssistantToolRun[]>([])
 const selectedNode = ref<GraphNode | null>(null)
 const sidePanel = ref<'evidence' | 'graph'>(route.query.panel === 'graph' ? 'graph' : 'evidence')
 const activeTask = ref('等待任务')
@@ -57,8 +98,8 @@ const messages = ref<ChatMessage[]>([
   {
     id: 1,
     role: 'assistant',
-    meta: '科研助理 · 离线规则导航',
-    text: '你好。我会先确认任务和证据边界，再调用结构化科研工具。当前离线模式不冒充大模型推理，也不会把候选问题写成确定创新点。',
+    meta: '科研助理 · 会话尚未创建',
+    text: '你好。我会先确认任务和证据边界，再调用结构化科研工具。运行模式由服务端决定；离线回答和模型生成会明确区分。',
   },
 ])
 
@@ -77,6 +118,18 @@ const selectedEvidence = computed(() => (
     ? evidenceById.value.get(selectedNode.value.local_id) ?? null
     : null
 ))
+const assistantRuntimeLabel = computed(() => {
+  if (!assistantSession.value) return '服务端模式待确认'
+  if (assistantSession.value.backend === 'offline') return '离线规则 · 本地证据工具'
+  if (assistantSession.value.provider_status === 'unavailable') return '星辰工作流 · 配置不可用'
+  return `星辰工作流 · ${assistantSession.value.model_label}`
+})
+const assistantRuntimeDescription = computed(() => {
+  if (!assistantSession.value) return '首次拆解任务将创建带 trace_id 的会话，并记录实际工具调用。'
+  if (assistantSession.value.backend === 'offline') return '当前会话未调用外部模型；回答由本地工具结果和固定规则组织。'
+  if (assistantSession.value.provider_status === 'unavailable') return '当前会话不会降级伪装成模型回答，请检查服务端星辰配置。'
+  return '当前会话由星辰工作流组织语言；事实仍必须引用本地 EvidenceAnchor。'
+})
 
 const graphLayout = computed(() => {
   if (!graph.value) return { nodes: [], edges: [], height: 480 }
@@ -106,8 +159,14 @@ const graphLayout = computed(() => {
   }
 })
 
-function addMessage(role: 'assistant' | 'user', text: string, meta?: string) {
-  messages.value.push({ id: messageSequence++, role, text, meta })
+function addMessage(
+  role: 'assistant' | 'user',
+  text: string,
+  meta?: string,
+  evidenceIds?: string[],
+  origin?: string,
+) {
+  messages.value.push({ id: messageSequence++, role, text, meta, evidenceIds, origin })
 }
 
 async function loadPaperAndGraph() {
@@ -121,6 +180,74 @@ async function loadPaperAndGraph() {
   selectedNode.value = graph.value?.nodes.find((item) => item.node_type === 'paper') ?? null
 }
 
+async function ensureAssistantSession() {
+  if (assistantSession.value) return assistantSession.value
+  const response = await fetch('/api/v1/assistant/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paper_id: paperId }),
+  })
+  if (!response.ok) throw new Error('无法创建论文拆解会话。')
+  assistantSession.value = await response.json()
+  return assistantSession.value!
+}
+
+async function askPaperAssistant(question: string) {
+  if (loading.value) return
+  loading.value = true
+  error.value = ''
+  activeTask.value = '拆解一篇论文'
+  latestToolRuns.value = []
+  setSteps([
+    ['建立可追踪会话', '绑定论文、trace_id、提示词版本和运行后端'],
+    ['调用本地证据工具', '先取结构化事实，再允许规则或模型组织语言'],
+    ['校验证据边界', '模型回答必须引用已存在的 EvidenceAnchor'],
+  ])
+  taskSteps.value[0].status = 'running'
+  try {
+    const session = await ensureAssistantSession()
+    taskSteps.value[0].status = 'done'
+    taskSteps.value[1].status = 'running'
+    const response = await fetch(`/api/v1/assistant/sessions/${session.session_id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: question,
+        expected_message_count: session.messages.length,
+      }),
+    })
+    if (response.status === 409) {
+      assistantSession.value = await fetch(`/api/v1/assistant/sessions/${session.session_id}`).then((item) => item.json())
+      throw new Error('会话历史已变化，请重新发送问题。')
+    }
+    if (!response.ok) throw new Error('论文拆解会话执行失败。')
+    const turn: AssistantTurn = await response.json()
+    assistantSession.value = turn.session
+    latestToolRuns.value = turn.tool_runs
+    taskSteps.value[1].status = turn.tool_runs.every((item) => item.status === 'succeeded') ? 'done' : 'blocked'
+    taskSteps.value[2].status = turn.status === 'succeeded' ? 'done' : 'blocked'
+    await loadPaperAndGraph()
+    sidePanel.value = 'evidence'
+    const firstEvidence = turn.assistant_message.evidence_ids[0]
+    if (firstEvidence) selectEvidenceById(firstEvidence)
+    addMessage(
+      'assistant',
+      turn.assistant_message.content,
+      `${assistantRuntimeLabel.value} · ${turn.session.trace_id.slice(0, 14)}…`,
+      turn.assistant_message.evidence_ids,
+      turn.assistant_message.origin,
+    )
+    if (turn.status === 'error') error.value = turn.warning ?? '模型回答未通过证据校验。'
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+    const running = taskSteps.value.find((item) => item.status === 'running')
+    if (running) running.status = 'blocked'
+    addMessage('assistant', error.value, '执行失败', [], 'system_error')
+  } finally {
+    loading.value = false
+  }
+}
+
 function setSteps(items: Array<[string, string]>) {
   taskSteps.value = items.map(([label, detail]) => ({ label, detail, status: 'pending' }))
 }
@@ -131,6 +258,11 @@ async function runTask(kind: TaskKind, fromPrompt = false) {
   if (!fromPrompt) addMessage('user', task.title)
   activeTask.value = task.title
   error.value = ''
+
+  if (kind === 'paper') {
+    await askPaperAssistant(task.title)
+    return
+  }
 
   if (kind === 'claim' || kind === 'plot') {
     setSteps([
@@ -153,22 +285,7 @@ async function runTask(kind: TaskKind, fromPrompt = false) {
 
   loading.value = true
   try {
-    if (kind === 'paper') {
-      setSteps([
-        ['读取论文记录', '只加载当前可公开的 development seed'],
-        ['闭合证据关系', '核对 Claim、Experiment、Artifact 与 EvidenceAnchor'],
-        ['呈现证据边界', '不伪造页码、图注或核验状态'],
-      ])
-      taskSteps.value[0].status = 'running'
-      await loadPaperAndGraph()
-      taskSteps.value.forEach((item) => { item.status = 'done' })
-      sidePanel.value = 'evidence'
-      addMessage(
-        'assistant',
-        `已加载 ${paper.value!.title}：${paper.value!.claims.length} 个 Claim、${paper.value!.experiment_intents.length} 个实验意图、${paper.value!.artifacts.length} 个 Figure/Table 角色和 ${paper.value!.evidence.length} 个 EvidenceAnchor。它仍是开发种子，不是冻结 Gold。`,
-        `证据图来源 · ${graph.value!.source}`,
-      )
-    } else {
+    if (kind === 'opportunity') {
       setSteps([
         ['建立查询计划', '限定 TAD 主题和最少两篇已审核论文'],
         ['应用纳入/排除规则', '排队论文不参与证据聚合'],
@@ -209,10 +326,11 @@ async function submitPrompt() {
   addMessage('user', value)
   prompt.value = ''
   const normalized = value.toLowerCase()
+  if (/论文|anomaly|transformer|evidenceanchor|figure|table|图表角色|实验意图|消融实验|证据链/.test(normalized)) return askPaperAssistant(value)
   if (/图表|绘图|csv|json|plot/.test(normalized)) return runTask('plot', true)
   if (/claim|假设|实验设计|证据需求/.test(normalized)) return runTask('claim', true)
   if (/机会|选题|创新|前沿/.test(normalized)) return runTask('opportunity', true)
-  if (/论文|anomaly|transformer|证据|拆解/.test(normalized)) return runTask('paper', true)
+  if (/证据|拆解/.test(normalized)) return askPaperAssistant(value)
   addMessage(
     'assistant',
     '我还不能可靠判断你要执行哪类科研任务。请补充是“拆解论文、分析研究机会、诊断 Claim”还是“上传数据生成图表”。这是离线规则导航的能力边界。',
@@ -225,6 +343,11 @@ function selectEvidence(evidence: Evidence) {
     (item) => item.node_type === 'evidence' && item.local_id === evidence.id,
   ) ?? null
   sidePanel.value = 'evidence'
+}
+
+function selectEvidenceById(evidenceId: string) {
+  const evidence = evidenceById.value.get(evidenceId)
+  if (evidence) selectEvidence(evidence)
 }
 
 watch(
@@ -250,7 +373,7 @@ onMounted(async () => {
         <div>
           <p>EVIDENCE-GROUNDED RESEARCH COPILOT</p>
           <h1>让对话推进科研任务，<br /><em>让证据约束每一步。</em></h1>
-          <span>当前为离线规则导航；未连接模型时不会伪装成智能体推理。</span>
+          <span>{{ assistantRuntimeDescription }}</span>
         </div>
         <button data-testid="run-evidence-demo" :disabled="loading" @click="runTask('paper')">
           {{ loading ? '执行中…' : '启动证据链演示' }}
@@ -264,16 +387,19 @@ onMounted(async () => {
       </section>
 
       <section class="conversation-card">
-        <header><div><i></i><b>科研助理</b></div><span>对话入口 · 结构化工具执行</span></header>
+        <header><div><i></i><b>科研助理</b></div><span data-testid="assistant-runtime">{{ assistantRuntimeLabel }}</span></header>
         <div class="message-list" aria-live="polite">
           <article v-for="message in messages" :key="message.id" :class="message.role">
             <small>{{ message.meta ?? (message.role === 'user' ? '你' : '科研助理') }}</small>
             <p>{{ message.text }}</p>
+            <div v-if="message.evidenceIds?.length" class="chat-evidence">
+              <button v-for="evidenceId in message.evidenceIds" :key="evidenceId" @click="selectEvidenceById(evidenceId)">{{ evidenceId }}</button>
+            </div>
           </article>
         </div>
         <form class="assistant-prompt" @submit.prevent="submitPrompt">
           <textarea v-model="prompt" aria-label="科研任务输入" rows="3" placeholder="例如：拆解 Anomaly Transformer，并告诉我每个 Claim 由哪些证据支持"></textarea>
-          <footer><span>自然语言发起任务 · 证据不足时明确停止</span><button :disabled="loading || !prompt.trim()">发送任务</button></footer>
+          <footer><span>论文问答记录 trace_id 与工具调用 · 证据不足时明确停止</span><button :disabled="loading || !prompt.trim()">发送任务</button></footer>
         </form>
       </section>
       <p v-if="error" class="assistant-error">{{ error }}</p>
@@ -288,6 +414,15 @@ onMounted(async () => {
           </li>
         </ol>
         <p v-else class="empty-task">选择一个任务后，这里会显示实际执行步骤，而不是只返回一段聊天文本。</p>
+        <div v-if="latestToolRuns.length" class="tool-run-log" data-testid="assistant-tool-runs">
+          <p>TOOL RUNS</p>
+          <article v-for="run in latestToolRuns" :key="run.run_id">
+            <span>{{ run.status }}</span><div><b>{{ run.tool_name }}</b><small>{{ run.source }} · {{ run.result_summary }}</small></div>
+          </article>
+        </div>
+        <footer v-if="assistantSession" data-testid="assistant-trace">
+          <span>{{ assistantSession.trace_id }}</span><small>{{ assistantSession.prompt_version }} · {{ assistantSession.storage }}</small>
+        </footer>
       </section>
 
       <section class="evidence-inspector">
@@ -339,8 +474,10 @@ onMounted(async () => {
 .assistant-view { max-width: none; display: grid; grid-template-columns: minmax(520px, 1.35fr) minmax(390px, .8fr); min-height: calc(100vh - 66px); background: #f4f6f3; }
 .assistant-main { min-width: 0; padding: 45px clamp(24px, 4vw, 65px) 70px; }.assistant-hero { display: flex; justify-content: space-between; gap: 30px; align-items: end; }.assistant-hero > div { max-width: 780px; }.assistant-hero p { color: #678075; font-size: 10px; font-weight: 900; letter-spacing: 2px; }.assistant-hero h1 { margin: 12px 0 18px; color: #173126; font-size: clamp(38px, 4.6vw, 68px); line-height: 1.02; letter-spacing: -3px; }.assistant-hero h1 em { color: #ef683e; font-style: normal; }.assistant-hero span { color: #708079; font-size: 12px; }.assistant-hero > button { min-width: 160px; padding: 13px 16px; border: 0; border-radius: 10px; background: #205c45; color: white; font-weight: 800; box-shadow: 0 8px 22px rgba(32,92,69,.2); }
 .quick-task-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 32px; }.quick-task-grid button { min-height: 150px; display: grid; grid-template-columns: 1fr auto; align-content: start; gap: 7px; padding: 16px; border: 1px solid #dbe2dd; border-radius: 14px; background: #fff; color: #1d3429; text-align: left; transition: .18s; }.quick-task-grid button:hover { transform: translateY(-3px); border-color: #8fb5a2; box-shadow: 0 10px 25px rgba(23,49,38,.08); }.quick-task-grid button > span { color: #ef683e; font-size: 10px; font-weight: 900; }.quick-task-grid button > b { grid-column: 1 / -1; font-size: 14px; }.quick-task-grid button p { grid-column: 1 / -1; margin: 3px 0; color: #748179; font-size: 11px; line-height: 1.5; }.quick-task-grid button i { grid-column: 2; color: #205c45; font-style: normal; font-size: 20px; }
-.conversation-card { margin-top: 20px; overflow: hidden; border: 1px solid #dbe2dd; border-radius: 16px; background: white; box-shadow: 0 14px 40px rgba(28,55,43,.06); }.conversation-card > header { display: flex; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #edf0ed; }.conversation-card > header div { display: flex; align-items: center; gap: 8px; }.conversation-card > header i { width: 9px; height: 9px; border-radius: 50%; background: #52a574; }.conversation-card > header b { font-size: 12px; }.conversation-card > header span { color: #8a968f; font-size: 10px; }.message-list { min-height: 245px; max-height: 440px; overflow-y: auto; padding: 22px; background: linear-gradient(180deg,#fbfcfb,#f4f7f4); }.message-list article { max-width: 82%; margin-bottom: 15px; padding: 13px 15px; border-radius: 4px 14px 14px 14px; background: white; box-shadow: 0 4px 14px rgba(33,57,46,.05); }.message-list article.user { margin-left: auto; border-radius: 14px 4px 14px 14px; background: #dfeee6; }.message-list small { color: #718078; font-size: 9px; font-weight: 800; }.message-list p { margin: 6px 0 0; color: #263b31; font-size: 13px; line-height: 1.65; }.assistant-prompt { margin: 14px; border: 1px solid #cad5ce; border-radius: 12px; }.assistant-prompt textarea { width: 100%; resize: vertical; padding: 15px; border: 0; outline: 0; background: transparent; color: #20372c; font: inherit; line-height: 1.5; }.assistant-prompt footer { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px 10px 15px; }.assistant-prompt footer span { color: #8a968f; font-size: 9px; }.assistant-prompt button { padding: 9px 15px; border: 0; border-radius: 8px; background: #205c45; color: white; font-weight: 800; }.assistant-prompt button:disabled { opacity: .45; }.assistant-error { padding: 12px; border-left: 4px solid #ef683e; background: #ffe1d5; color: #943b21; }
+.conversation-card { margin-top: 20px; overflow: hidden; border: 1px solid #dbe2dd; border-radius: 16px; background: white; box-shadow: 0 14px 40px rgba(28,55,43,.06); }.conversation-card > header { display: flex; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #edf0ed; }.conversation-card > header div { display: flex; align-items: center; gap: 8px; }.conversation-card > header i { width: 9px; height: 9px; border-radius: 50%; background: #52a574; }.conversation-card > header b { font-size: 12px; }.conversation-card > header span { color: #8a968f; font-size: 10px; }.message-list { min-height: 245px; max-height: 440px; overflow-y: auto; padding: 22px; background: linear-gradient(180deg,#fbfcfb,#f4f7f4); }.message-list article { max-width: 82%; margin-bottom: 15px; padding: 13px 15px; border-radius: 4px 14px 14px 14px; background: white; box-shadow: 0 4px 14px rgba(33,57,46,.05); }.message-list article.user { margin-left: auto; border-radius: 14px 4px 14px 14px; background: #dfeee6; }.message-list small { color: #718078; font-size: 9px; font-weight: 800; }.message-list p { margin: 6px 0 0; color: #263b31; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }.assistant-prompt { margin: 14px; border: 1px solid #cad5ce; border-radius: 12px; }.assistant-prompt textarea { width: 100%; resize: vertical; padding: 15px; border: 0; outline: 0; background: transparent; color: #20372c; font: inherit; line-height: 1.5; }.assistant-prompt footer { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px 10px 15px; background: transparent; font-weight: normal; }.assistant-prompt footer span { color: #8a968f; font-size: 9px; }.assistant-prompt button { padding: 9px 15px; border: 0; border-radius: 8px; background: #205c45; color: white; font-weight: 800; }.assistant-prompt button:disabled { opacity: .45; }.assistant-error { padding: 12px; border-left: 4px solid #ef683e; background: #ffe1d5; color: #943b21; }
+.chat-evidence { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }.chat-evidence button { padding: 4px 7px; border: 1px solid #b9ccc1; border-radius: 99px; background: #edf5f0; color: #275e47; font-size: 8px; font-weight: 900; }
 .research-inspector { min-width: 0; padding: 28px; border-left: 1px solid #dfe4df; background: #eef2ee; }.task-status, .evidence-inspector { border: 1px solid #d8e0da; border-radius: 14px; background: white; }.task-status { padding: 18px; }.task-status > header { display: flex; justify-content: space-between; align-items: center; }.task-status header p { margin: 0; color: #8c9992; font-size: 9px; letter-spacing: 1.3px; }.task-status h2 { margin: 5px 0 0; font-size: 18px; }.task-status header > span { padding: 6px 8px; border-radius: 99px; background: #e6efe9; color: #2a634b; font-size: 9px; font-weight: 900; }.task-status ol { display: grid; gap: 7px; margin: 16px 0 0; padding: 0; list-style: none; }.task-status li { display: grid; grid-template-columns: 27px 1fr auto; gap: 9px; align-items: center; padding: 10px; border-radius: 9px; background: #f4f6f3; }.task-status li > i { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cbd5ce; border-radius: 50%; font-style: normal; font-size: 9px; }.task-status li div { display: grid; gap: 2px; }.task-status li b { font-size: 11px; }.task-status li small { color: #849089; font-size: 9px; }.task-status li > span { color: #849089; font-size: 8px; text-transform: uppercase; }.task-status li.done > i { border-color: #4a9c6c; background: #4a9c6c; color: white; }.task-status li.running { background: #fff5d8; }.task-status li.blocked { background: #ffe5dc; }.empty-task { color: #79867e; font-size: 11px; line-height: 1.6; }
+.tool-run-log { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4e9e5; }.tool-run-log > p { margin: 0 0 3px; color: #8c9992; font-size: 8px; font-weight: 900; letter-spacing: 1.2px; }.tool-run-log article { display: grid; grid-template-columns: 54px 1fr; gap: 8px; padding: 8px; border-radius: 8px; background: #eef4f0; }.tool-run-log article > span { align-self: start; padding: 4px 5px; border-radius: 99px; background: #d8eadf; color: #26704c; font-size: 7px; font-weight: 900; text-align: center; text-transform: uppercase; }.tool-run-log article div { display: grid; gap: 2px; }.tool-run-log article b { font-size: 9px; }.tool-run-log article small { color: #7b8881; font-size: 8px; line-height: 1.4; }.task-status > footer { display: grid; gap: 3px; margin-top: 12px; padding: 10px 0 0; border-top: 1px solid #e4e9e5; background: transparent; font-weight: normal; }.task-status > footer span { overflow: hidden; color: #315d49; font-size: 8px; font-family: monospace; text-overflow: ellipsis; white-space: nowrap; }.task-status > footer small { color: #89958e; font-size: 7px; }
 .evidence-inspector { margin-top: 16px; overflow: hidden; }.evidence-inspector > header { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #e4e9e5; }.evidence-inspector > header button { padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: #718078; font-size: 11px; font-weight: 800; }.evidence-inspector > header button.active { background: #dfeee6; color: #205c45; }.evidence-inspector > header span { margin-left: auto; padding: 5px 7px; border: 1px solid #d4ddd7; border-radius: 99px; color: #6d7a72; font-size: 8px; }.evidence-panel, .graph-panel { padding: 18px; }.selection-label { display: flex; justify-content: space-between; }.selection-label span, .selection-label b { padding: 5px 7px; border-radius: 99px; background: #eef2ee; font-size: 8px; }.selection-label b { background: #ffe6dc; color: #a34224; }.evidence-panel h3 { margin: 14px 0 8px; font-size: 17px; line-height: 1.35; }.evidence-panel > p { color: #718078; font-size: 10px; line-height: 1.5; }.evidence-panel blockquote { margin: 13px 0; padding: 12px; border-left: 3px solid #ef683e; background: #f5f6f2; color: #43544b; font: 13px/1.6 Georgia,serif; }.evidence-list { display: grid; gap: 5px; margin: 17px 0; }.evidence-list button { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 9px; border: 1px solid #e1e6e2; border-radius: 8px; background: white; text-align: left; }.evidence-list button > span { color: #ef683e; font-size: 9px; font-weight: 900; }.evidence-list button div { display: grid; gap: 2px; }.evidence-list b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.evidence-list small { color: #909b94; font-size: 8px; }.evidence-panel > a { color: #205c45; font-size: 10px; font-weight: 800; text-decoration: none; }
 .graph-legend { display: flex; flex-wrap: wrap; gap: 5px; }.graph-legend span { padding: 4px 6px; border-radius: 99px; font-size: 8px; }.graph-legend .paper { background: #205c45; color: white; }.graph-legend .claim { background: #dfff43; }.graph-legend .work { background: #ffd7c9; }.graph-legend .evidence { background: #dce8ff; }.graph-scroll { max-height: 520px; margin-top: 12px; overflow: auto; border: 1px solid #e3e8e4; border-radius: 10px; background: #f9fbf9; }.graph-scroll svg { display: block; min-width: 720px; width: 100%; }.graph-scroll line { stroke: #c2ccc6; stroke-width: 1; }.graph-scroll g { cursor: pointer; }.graph-scroll rect { fill: white; stroke: #aebbb3; stroke-width: 1.3; }.graph-scroll text { fill: #23382e; font-size: 8px; pointer-events: none; }.graph-scroll g.paper rect { fill: #205c45; stroke: #205c45; }.graph-scroll g.paper text { fill: white; }.graph-scroll g.claim rect { fill: #efffb0; stroke: #b7d64c; }.graph-scroll g.experiment rect, .graph-scroll g.artifact rect { fill: #ffe3d9; stroke: #ef9b7e; }.graph-scroll g.evidence rect { fill: #e8effd; stroke: #9fb4dc; }.graph-panel > p { color: #718078; font-size: 9px; line-height: 1.45; }.graph-warning { padding-left: 8px; border-left: 2px solid #ef683e; }
 @media (max-width: 1250px) { .assistant-view { grid-template-columns: 1fr; }.research-inspector { display: grid; grid-template-columns: .8fr 1.2fr; gap: 15px; border-left: 0; border-top: 1px solid #dfe4df; }.evidence-inspector { margin-top: 0; }.quick-task-grid { grid-template-columns: repeat(2, 1fr); } }

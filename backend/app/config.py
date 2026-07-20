@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     embedding_backend: str = "hash"
     document_structure_backend: str = "gold"
     evidence_graph_backend: str = "gold"
+    assistant_backend: str = "offline"
     project_claim_backend: str = "memory"
     experiment_run_backend: str = "memory"
     cors_origins: str = "http://localhost:5173"
@@ -17,6 +18,14 @@ class Settings(BaseSettings):
     neo4j_uri: str = "bolt://127.0.0.1:7687"
     neo4j_username: str = "neo4j"
     neo4j_password: str = "kd_agent_graph_local"
+    astron_agent_api_url: str = (
+        "https://xingchen-api.xf-yun.com/workflow/v1/chat/completions"
+    )
+    astron_agent_api_key: str = ""
+    astron_agent_api_secret: str = ""
+    astron_agent_flow_id: str = ""
+    astron_agent_model_label: str = "configured-in-workflow"
+    assistant_model_timeout_seconds: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),

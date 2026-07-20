@@ -2,6 +2,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
+from app.assistant_models import (
+    AssistantMessageRequest,
+    AssistantSession,
+    AssistantSessionCreateRequest,
+    AssistantTurnResponse,
+)
 from app.gold_dataset import get_gold_dataset
 from app.models import DocumentStructure, PaperDeconstruction, SearchRequest, SearchResponse
 from app.evidence_graph_models import EvidenceGraphResponse
@@ -34,6 +40,13 @@ from app.experiment_run_models import (
 from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
+from app.services.assistant_sessions import (
+    AssistantSessionConflictError,
+    AssistantSessionNotFoundError,
+    AssistantSessionService,
+    InMemoryAssistantSessionStore,
+)
+from app.services.astron_workflow import AssistantProviderError, AstronWorkflowClient
 from app.services.document_structure import DocumentStructureService
 from app.services.evidence_graph import (
     EvidenceGraphNotFoundError,
@@ -82,6 +95,41 @@ _memory_project_claim_store = InMemoryProjectClaimStore()
 _memory_experiment_plan_store = InMemoryExperimentPlanStore()
 _memory_plot_draft_store = InMemoryPlotDraftStore()
 _memory_experiment_run_store = InMemoryExperimentRunStore()
+_memory_assistant_session_store = InMemoryAssistantSessionStore()
+
+
+def _assistant_session_service() -> AssistantSessionService:
+    settings = get_settings()
+    if settings.assistant_backend == "offline":
+        return AssistantSessionService(
+            _memory_assistant_session_store,
+            get_gold_dataset(),
+            backend="offline",
+        )
+    if settings.assistant_backend == "astron":
+        try:
+            provider = AstronWorkflowClient(
+                api_url=settings.astron_agent_api_url,
+                api_key=settings.astron_agent_api_key,
+                api_secret=settings.astron_agent_api_secret,
+                flow_id=settings.astron_agent_flow_id,
+                model_label=settings.astron_agent_model_label,
+                timeout_seconds=settings.assistant_model_timeout_seconds,
+            )
+        except AssistantProviderError as exc:
+            return AssistantSessionService(
+                _memory_assistant_session_store,
+                get_gold_dataset(),
+                backend="astron",
+                provider_warning=str(exc),
+            )
+        return AssistantSessionService(
+            _memory_assistant_session_store,
+            get_gold_dataset(),
+            backend="astron",
+            provider=provider,
+        )
+    raise RuntimeError(f"Unsupported assistant_backend: {settings.assistant_backend}")
 
 
 def _project_claim_service() -> ProjectClaimService:
@@ -161,6 +209,46 @@ def healthz() -> dict:
 @router.post("/tools/search", response_model=SearchResponse)
 def search(request: SearchRequest) -> SearchResponse:
     return DemoSearchService(get_gold_dataset()).search(request.query, request.limit)
+
+
+@router.post("/assistant/sessions", response_model=AssistantSession)
+def create_assistant_session(
+    request: AssistantSessionCreateRequest,
+) -> AssistantSession:
+    try:
+        return _assistant_session_service().create(request.paper_id)
+    except AssistantSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="No public paper record") from exc
+    except (RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
+
+
+@router.get("/assistant/sessions/{session_id}", response_model=AssistantSession)
+def get_assistant_session(session_id: str) -> AssistantSession:
+    try:
+        return _assistant_session_service().get(session_id)
+    except AssistantSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Assistant session not found") from exc
+    except (RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
+
+
+@router.post(
+    "/assistant/sessions/{session_id}/messages",
+    response_model=AssistantTurnResponse,
+)
+def send_assistant_message(
+    session_id: str,
+    request: AssistantMessageRequest,
+) -> AssistantTurnResponse:
+    try:
+        return _assistant_session_service().send(session_id, request)
+    except AssistantSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Assistant session not found") from exc
+    except AssistantSessionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (RuntimeError, ImportError) as exc:
+        raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
 
 
 @router.get(

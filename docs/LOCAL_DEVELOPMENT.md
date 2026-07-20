@@ -78,9 +78,54 @@ npm run dev
 - `http://127.0.0.1:5173/workspace`：论文拆解、研究机会、Project Claim、实验计划与绘图的完整专业编辑器。
 - `http://127.0.0.1:5173/knowledge-graph`：导航到科研助理的关系图面板。
 
-当前科研助理是明确标记的离线规则导航：它按自然语言关键词选择现有确定性工具并在不能可靠识别
-意图时要求澄清，没有连接模型时不会伪装成大模型推理。对话负责推进任务，结构化工作区继续保存
-版本、证据和可复现产物。
+当前科研助理默认使用明确标记的离线规则导航：它按自然语言关键词选择现有确定性工具并在不能可靠
+识别意图时要求澄清，没有连接模型时不会伪装成大模型推理。论文拆解问答由服务端会话API执行，
+每轮记录`session_id`、`trace_id`、提示词版本、消息来源、实际工具运行和EvidenceAnchor。会话当前只
+保存在API进程内存，重启后清空；结构化工作区继续保存版本、证据和可复现产物。
+
+### 论文拆解会话与星辰工作流
+
+默认配置完全离线：
+
+```dotenv
+ASSISTANT_BACKEND=offline
+```
+
+创建会话并发送第一轮问题：
+
+```http
+POST /api/v1/assistant/sessions
+{"paper_id":"anomaly-transformer-2022"}
+
+POST /api/v1/assistant/sessions/{session_id}/messages
+{"content":"为什么要做消融实验？","expected_message_count":0}
+```
+
+第二轮的`expected_message_count`应使用上一响应中`session.messages`的长度；过期计数返回409，避免并发
+覆盖历史。`GET /api/v1/assistant/sessions/{session_id}`读取当前进程内历史。每轮至少执行
+`paper_deconstruct`；涉及页码/章节时增加`document_structure`，涉及关系图时增加`evidence_graph`。
+工具选择是可测试的服务端规则，不应宣称为模型自主工具规划。
+
+接入已发布并绑定应用的星辰工作流时，只在后端`.env`填写：
+
+```dotenv
+ASSISTANT_BACKEND=astron
+ASTRON_AGENT_API_KEY=<server-only>
+ASTRON_AGENT_API_SECRET=<server-only>
+ASTRON_AGENT_FLOW_ID=<published-flow-id>
+ASTRON_AGENT_MODEL_LABEL=<model-version-configured-in-workflow>
+```
+
+实现遵循讯飞官方工作流接口`https://xingchen-api.xf-yun.com/workflow/v1/chat/completions`，使用
+`Bearer API_KEY:API_SECRET`，发送最多最近12条历史消息和`chat_id`。工作流开始节点需要接收
+`AGENT_USER_INPUT`；后端会把当前问题、结构化工具结果和科研诚信约束放入该参数。官方接入文档：
+<https://www.xfyun.cn/doc/spark/Agent04-API%E6%8E%A5%E5%85%A5.html>。
+
+模型只能组织本地证据语言：每个事实性回答必须以`[ev-*]`引用当前论文已存在的EvidenceAnchor。
+未知引用、无引用、空响应、HTTP/鉴权错误或工作流中断都会得到`status=error`和
+`origin=system_error`；本轮工具日志仍保留，但不会用离线模板冒充模型回答。API Key和Secret不进入
+响应、浏览器或Git。自动测试使用`httpx.MockTransport`验证真实协议形状，没有消耗外部额度，也不
+代表星辰线上调用已经通过；首次真实联调必须另行保存调用时间、工作流版本和脱敏结果证据。
 
 论文阅读器同时请求`paper-deconstruct`、`document-structure`和`evidence-graph`三条接口。语义拆解与
 客观版面在界面中分栏展示：`gold_snapshot`只提供结构名称与角色卡，PDF定位按钮保持禁用；只有

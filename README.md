@@ -35,10 +35,14 @@ npm run dev
 Figure/Table角色和EvidenceAnchor放在同一审核界面。当前默认数据是`development_seed + gold_snapshot`：
 没有已登记的授权解析结果时，页面不会分发原PDF，也不会显示伪造页码、图注、bbox或正文引用。
 
-科研助理首页使用自然语言和四类任务卡导航现有确定性科研工具，右侧固定展示EvidenceAnchor和
-局部关系图。默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把
-开发种子冒充Neo4j查询结果。安装基础设施依赖、启动Neo4j并将该配置改为`neo4j`后，右侧关系图
-改为读取真实Neo4j可重建索引；MySQL仍是权威事实源。
+科研助理首页使用自然语言和四类任务卡导航现有科研工具。论文问答会创建带`trace_id`的进程内
+会话，并记录实际调用的本地工具、来源和EvidenceAnchor；默认`ASSISTANT_BACKEND=offline`，明确显示
+“离线规则 · 本地证据工具”。可选星辰工作流只负责依据本地工具结果组织语言，返回内容必须引用
+已存在的EvidenceAnchor，否则作为错误拒绝，不会静默回退成伪造的模型成功。
+
+默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把开发种子冒充
+Neo4j查询结果。安装基础设施依赖、启动Neo4j并将该配置改为`neo4j`后，右侧关系图改为读取真实
+Neo4j可重建索引；MySQL仍是权威事实源。
 
 ## 验证
 
