@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
+import ProjectClaimWorkspace from './components/ProjectClaimWorkspace.vue'
+
 type Evidence = {
   id: string
   kind: string
@@ -324,6 +326,7 @@ onMounted(async () => {
       <nav>
         <a href="#papers">论文拆解</a>
         <a href="#opportunities">研究进展与机会</a>
+        <a href="#project-claim">推进我的研究</a>
         <span class="status"><i></i> 离线证据模式</span>
       </nav>
     </header>
@@ -415,6 +418,8 @@ onMounted(async () => {
           <p>页码：{{ selectedEvidence.page ?? '尚未由授权 PDF 核验' }}</p>
         </aside>
       </section>
+
+      <ProjectClaimWorkspace />
 
       <section id="opportunities" class="opportunity-section">
         <div class="opportunity-intro">

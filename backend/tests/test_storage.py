@@ -63,6 +63,11 @@ PDF_LAYOUT_TABLES = {
     "pdf_body_references",
 }
 
+PROJECT_CLAIM_TABLES = {
+    "project_claim_versions",
+    "evidence_diagnosis_versions",
+}
+
 
 class RecordingGraph:
     def __init__(self, error: Exception | None = None) -> None:
@@ -103,6 +108,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "graph_sync_states",
         *AUTHORITY_TABLES,
         *PDF_LAYOUT_TABLES,
+        *PROJECT_CLAIM_TABLES,
     } <= tables
 
     gold_record_foreign_keys = inspector.get_foreign_keys("paper_gold_records")
@@ -134,6 +140,25 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "pdf_content",
     }.isdisjoint(pdf_source_columns)
 
+    diagnosis_foreign_keys = inspector.get_foreign_keys(
+        "evidence_diagnosis_versions"
+    )
+    assert {item["referred_table"] for item in diagnosis_foreign_keys} == {
+        "project_claim_versions"
+    }
+
+    command.downgrade(config, "0003_reconstructed_pdf_layout")
+    r3_tables = set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+    assert not (PROJECT_CLAIM_TABLES & r3_tables)
+    assert PDF_LAYOUT_TABLES <= r3_tables
+
+    command.upgrade(config, "head")
+    assert PROJECT_CLAIM_TABLES <= set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+
     command.downgrade(config, "0002_reconstructed_authority")
     authority_only_tables = set(
         inspect(create_engine(config.attributes["database_url"])).get_table_names()
@@ -157,7 +182,9 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
 
 
 def test_sqlalchemy_metadata_contains_normalized_authority_entities() -> None:
-    assert AUTHORITY_TABLES | PDF_LAYOUT_TABLES <= set(Base.metadata.tables)
+    assert AUTHORITY_TABLES | PDF_LAYOUT_TABLES | PROJECT_CLAIM_TABLES <= set(
+        Base.metadata.tables
+    )
     assert "uq_paper_gold_records_paper_dataset" in {
         constraint.name
         for constraint in Base.metadata.tables["paper_gold_records"].constraints

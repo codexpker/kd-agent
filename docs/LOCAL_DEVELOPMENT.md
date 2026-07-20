@@ -341,6 +341,53 @@ Project Claim固定标记`origin=user_supplied`。服务端重新执行同一研
 当前真实离线语料仍没有合格候选，因此本接口默认展示证据不足门禁。正向计划只在
 `synthetic-opportunity-fixture`测试中验证契约和关系闭合，不是实际研究建议质量成绩。
 
+## R4 Project Claim与证据需求诊断
+
+前端入口为`http://127.0.0.1:5173/#project-claim`。默认配置使用进程内存存储，重启后数据清空：
+
+```dotenv
+PROJECT_CLAIM_BACKEND=memory
+```
+
+需要MySQL权威持久化时，先运行`python -m alembic upgrade head`，再改为：
+
+```dotenv
+PROJECT_CLAIM_BACKEND=mysql
+```
+
+获取明确标记、且不含实验结果的合成TAD表单示例：
+
+```bash
+curl http://127.0.0.1:8000/api/v1/research/project-claims/examples/tad
+```
+
+创建首个不可变Claim版本并同时生成八项规则诊断：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/research/projects/tad-noise-study/claims \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "expected_latest_version":0,
+    "claim":{
+      "research_question":"Does an association-aware detector remain reliable under sensor noise?",
+      "hypothesis":"Under one fixed protocol, the proposed method degrades more slowly than selected strong baselines as noise increases.",
+      "proposed_method":"A user-defined association-aware detector",
+      "target_scenario":"Offline multivariate sensor anomaly detection",
+      "existing_results":[]
+    }
+  }'
+```
+
+同一项目再次POST完整Claim内容会创建v2，必须提交正确的`expected_latest_version`；过期版本返回
+409。`GET /api/v1/research/projects/{project_id}/claims`返回不可变版本历史。诊断的八种类型固定为
+`main_experiment`、`strong_baseline`、`fair_comparison`、`ablation`、
+`parameter_sensitivity`、`robustness`、`efficiency`和`failure_cases`。
+
+前端可编辑诊断理由、变量、输出字段、推荐图表、证明边界、状态和备注；保存时调用
+`PUT /api/v1/research/projects/{project_id}/claims/{version}/diagnosis`并创建新修订，不覆盖Claim
+或上一诊断修订。所有自动文案来自`project-claim-evidence-rules-v1`确定性模板；本轮未调用模型，
+也不评估实验可行性或研究创新性。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。

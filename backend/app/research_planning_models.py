@@ -28,7 +28,7 @@ ArtifactType = Literal[
 ]
 
 
-class ProjectClaim(BaseModel):
+class ResearchPlanClaimInput(BaseModel):
     research_question: str = Field(min_length=10, max_length=1000)
     hypothesis: str = Field(min_length=10, max_length=1500)
     proposed_method: str = Field(min_length=2, max_length=1000)
@@ -38,7 +38,7 @@ class ProjectClaim(BaseModel):
 class ResearchPlanRequest(BaseModel):
     opportunity: ResearchOpportunityRequest
     candidate_id: str = Field(min_length=5, max_length=100)
-    project_claim: ProjectClaim
+    project_claim: ResearchPlanClaimInput
 
 
 class PlanningEvidenceReference(BaseModel):
@@ -88,7 +88,7 @@ class ResearchExperimentPlan(BaseModel):
     output_type: Literal["research_experiment_plan"] = "research_experiment_plan"
     plan_id: str
     source_candidate_id: str
-    project_claim: ProjectClaim
+    project_claim: ResearchPlanClaimInput
     evidence_snapshot: list[OpportunityEvidence] = Field(min_length=1)
     experiments: list[PlannedExperiment] = Field(min_length=1)
     artifacts: list[PlannedArtifact] = Field(min_length=1)
@@ -136,7 +136,7 @@ class ResearchCoachResponse(BaseModel):
         "evidence_grounded_experiment_plan"
     )
     message: str
-    project_claim: ProjectClaim
+    project_claim: ResearchPlanClaimInput
     candidate: ResearchOpportunityCandidate | None
     plan: ResearchExperimentPlan | None
 

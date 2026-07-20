@@ -414,3 +414,53 @@ class GraphSyncStateRow(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectClaimVersionRow(Base):
+    __tablename__ = "project_claim_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "version", name="uq_project_claim_versions_project_version"
+        ),
+        Index("ix_project_claim_versions_claim_id", "claim_id"),
+    )
+
+    claim_version_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    claim_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_claim_version_id: Mapped[str | None] = mapped_column(
+        String(191), ForeignKey("project_claim_versions.claim_version_id", ondelete="RESTRICT")
+    )
+    research_question: Mapped[str] = mapped_column(Text, nullable=False)
+    hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    proposed_method: Mapped[str] = mapped_column(Text, nullable=False)
+    target_scenario: Mapped[str] = mapped_column(Text, nullable=False)
+    existing_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvidenceDiagnosisVersionRow(Base):
+    __tablename__ = "evidence_diagnosis_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "claim_version_id",
+            "revision",
+            name="uq_evidence_diagnoses_claim_revision",
+        ),
+    )
+
+    diagnosis_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    claim_version_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("project_claim_versions.claim_version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    planner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    language_organizer: Mapped[str] = mapped_column(String(64), nullable=False)
+    diagnosis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

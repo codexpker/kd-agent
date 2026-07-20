@@ -7,7 +7,7 @@ from app.research_planning_models import (
     PlannedExperiment,
     PlanningEvidenceReference,
     PlanningRationale,
-    ProjectClaim,
+    ResearchPlanClaimInput,
     ResearchCoachResponse,
     ResearchExperimentPlan,
     ResearchPlanRequest,
@@ -193,7 +193,7 @@ class ResearchPlanningService:
         candidate: ResearchOpportunityCandidate,
         context: PlanningContext,
         references: list[PlanningEvidenceReference],
-        project_claim: ProjectClaim,
+        project_claim: ResearchPlanClaimInput,
     ) -> list[PlannedExperiment]:
         shared_inputs = [
             "Versioned datasets and immutable train/validation/test splits",

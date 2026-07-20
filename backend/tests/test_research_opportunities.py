@@ -8,7 +8,7 @@ from app.main import app
 from app.models import Claim, EvidenceAnchor, PaperDeconstruction
 from app.research_models import ResearchOpportunityRequest
 from app.research_planning_models import (
-    ProjectClaim,
+    ResearchPlanClaimInput,
     ResearchCoachResponse,
     ResearchPlanRequest,
 )
@@ -242,8 +242,8 @@ def test_api_rejects_invalid_request_ranges_and_thresholds() -> None:
     assert invalid_threshold.status_code == 422
 
 
-def _project_claim() -> ProjectClaim:
-    return ProjectClaim(
+def _project_claim() -> ResearchPlanClaimInput:
+    return ResearchPlanClaimInput(
         research_question=(
             "Does the proposed detector remain reliable under controlled domain shift?"
         ),
