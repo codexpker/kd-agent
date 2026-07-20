@@ -10,6 +10,12 @@ from app.project_claim_models import (
     ProjectClaimHistory,
     TadProjectClaimExample,
 )
+from app.experiment_plan_models import (
+    ExperimentPlanBundle,
+    ExperimentPlanEditRequest,
+    ExperimentPlanGenerateRequest,
+    ExperimentPlanHistory,
+)
 from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
@@ -22,6 +28,12 @@ from app.services.project_claims import (
     ProjectClaimVersionConflictError,
     tad_project_claim_example,
 )
+from app.services.experiment_plans import (
+    ExperimentPlanNotFoundError,
+    ExperimentPlanService,
+    ExperimentPlanVersionConflictError,
+    InMemoryExperimentPlanStore,
+)
 from app.services.research_opportunities import ResearchOpportunityService
 from app.services.research_planning import (
     CandidateNotFoundError,
@@ -31,6 +43,7 @@ from app.services.search import DemoSearchService
 
 router = APIRouter(prefix="/api/v1")
 _memory_project_claim_store = InMemoryProjectClaimStore()
+_memory_experiment_plan_store = InMemoryExperimentPlanStore()
 
 
 def _project_claim_service() -> ProjectClaimService:
@@ -52,6 +65,22 @@ def _project_claim_backend_errors() -> tuple[type[BaseException], ...]:
 
         return (SQLAlchemyError, RuntimeError, ImportError)
     return (RuntimeError, ImportError)
+
+
+def _experiment_plan_service() -> ExperimentPlanService:
+    settings = get_settings()
+    claim_service = _project_claim_service()
+    if settings.project_claim_backend == "memory":
+        return ExperimentPlanService(_memory_experiment_plan_store, claim_service)
+    if settings.project_claim_backend == "mysql":
+        from app.storage.runtime import get_experiment_plan_repository
+
+        return ExperimentPlanService(
+            get_experiment_plan_repository(settings.mysql_url), claim_service
+        )
+    raise RuntimeError(
+        f"Unsupported project_claim_backend: {settings.project_claim_backend}"
+    )
 
 
 @router.get("/healthz")
@@ -160,6 +189,84 @@ def edit_project_claim_diagnosis(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except backend_errors as exc:
         raise HTTPException(status_code=503, detail="Project Claim backend unavailable") from exc
+
+
+@router.post(
+    "/research/projects/{project_id}/experiment-plans",
+    response_model=ExperimentPlanBundle,
+)
+def generate_project_experiment_plan(
+    request: ExperimentPlanGenerateRequest,
+    project_id: str,
+) -> ExperimentPlanBundle:
+    backend_errors = _project_claim_backend_errors()
+    try:
+        return _experiment_plan_service().generate(project_id, request)
+    except InvalidProjectIdError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ProjectClaimNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExperimentPlanVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment plan backend unavailable") from exc
+
+
+@router.get(
+    "/research/projects/{project_id}/experiment-plans",
+    response_model=ExperimentPlanHistory,
+)
+def project_experiment_plan_history(project_id: str) -> ExperimentPlanHistory:
+    backend_errors = _project_claim_backend_errors()
+    try:
+        return _experiment_plan_service().history(project_id)
+    except InvalidProjectIdError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment plan backend unavailable") from exc
+
+
+@router.get(
+    "/research/projects/{project_id}/experiment-plans/{revision}",
+    response_model=ExperimentPlanBundle,
+)
+def get_project_experiment_plan(
+    project_id: str,
+    revision: int = Path(ge=1),
+) -> ExperimentPlanBundle:
+    backend_errors = _project_claim_backend_errors()
+    try:
+        return _experiment_plan_service().get(project_id, revision)
+    except InvalidProjectIdError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ExperimentPlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment plan backend unavailable") from exc
+
+
+@router.put(
+    "/research/projects/{project_id}/experiment-plans/{revision}",
+    response_model=ExperimentPlanBundle,
+)
+def edit_project_experiment_plan(
+    request: ExperimentPlanEditRequest,
+    project_id: str,
+    revision: int = Path(ge=1),
+) -> ExperimentPlanBundle:
+    backend_errors = _project_claim_backend_errors()
+    try:
+        return _experiment_plan_service().edit(project_id, revision, request)
+    except InvalidProjectIdError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ExperimentPlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExperimentPlanVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment plan backend unavailable") from exc
 
 
 @router.post("/tools/paper-deconstruct/{paper_id}", response_model=PaperDeconstruction)

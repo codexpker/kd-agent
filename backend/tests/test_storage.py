@@ -68,6 +68,12 @@ PROJECT_CLAIM_TABLES = {
     "evidence_diagnosis_versions",
 }
 
+EXPERIMENT_PLAN_TABLES = {
+    "experiment_plan_versions",
+    "experiment_plan_claim_links",
+    "artifact_plan_claim_links",
+}
+
 
 class RecordingGraph:
     def __init__(self, error: Exception | None = None) -> None:
@@ -109,6 +115,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         *AUTHORITY_TABLES,
         *PDF_LAYOUT_TABLES,
         *PROJECT_CLAIM_TABLES,
+        *EXPERIMENT_PLAN_TABLES,
     } <= tables
 
     gold_record_foreign_keys = inspector.get_foreign_keys("paper_gold_records")
@@ -147,6 +154,26 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "project_claim_versions"
     }
 
+    experiment_claim_foreign_keys = inspector.get_foreign_keys(
+        "experiment_plan_claim_links"
+    )
+    assert {item["referred_table"] for item in experiment_claim_foreign_keys} == {
+        "experiment_plan_versions",
+        "project_claim_versions",
+    }
+
+    command.downgrade(config, "0004_project_claim_versions")
+    claim_only_tables = set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+    assert not (EXPERIMENT_PLAN_TABLES & claim_only_tables)
+    assert PROJECT_CLAIM_TABLES <= claim_only_tables
+
+    command.upgrade(config, "head")
+    assert EXPERIMENT_PLAN_TABLES <= set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+
     command.downgrade(config, "0003_reconstructed_pdf_layout")
     r3_tables = set(
         inspect(create_engine(config.attributes["database_url"])).get_table_names()
@@ -182,7 +209,12 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
 
 
 def test_sqlalchemy_metadata_contains_normalized_authority_entities() -> None:
-    assert AUTHORITY_TABLES | PDF_LAYOUT_TABLES | PROJECT_CLAIM_TABLES <= set(
+    assert (
+        AUTHORITY_TABLES
+        | PDF_LAYOUT_TABLES
+        | PROJECT_CLAIM_TABLES
+        | EXPERIMENT_PLAN_TABLES
+    ) <= set(
         Base.metadata.tables
     )
     assert "uq_paper_gold_records_paper_dataset" in {

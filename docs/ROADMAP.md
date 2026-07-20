@@ -79,4 +79,11 @@
   - [x] 每项记录所验证的Claim原文、必要性、自变量、控制变量、输出字段、推荐Figure/Table、能支持和不能支持的结论。
   - [x] 诊断可编辑并生成`user_edited`新修订；可行性和创新性固定为`not_assessed`，本轮不调用模型、不生成实验数据。
   - [x] 提供API、Vue工作区、明确标记的合成TAD表单示例、单元/API/仓储/迁移测试。
-- [ ] 后续：实验执行配置与真实结果导入（不属于本轮）。
+- [x] 将Project Claim诊断转化为版本化实验与图表计划。
+  - [x] 新增`0005_experiment_artifact_plans`，保存不可变计划修订，并以规范化关系表闭合每个Experiment/Artifact到一个或多个稳定Claim版本；默认离线内存模式仍可用。
+  - [x] `project-experiment-artifact-rules-v1`按八类证据需求生成RQ、Hypothesis、Dataset、Baseline、Variables、Controls、Metrics、ExpectedArtifact、Boundary和Status；RQ/Hypothesis保持所关联Claim原文。
+  - [x] ArtifactPlan明确Figure/Table形式理由、轴或行列设计、数据字段、Claim关联和常见误读；Experiment与Artifact双向ID闭合。
+  - [x] `experiment-plan-quality-rules-v1`逐实验检查缺少强基线、数据泄漏、不公平设置、指标不一致和过度结论；待选择数据集/强基线保持显式占位并触发提示，不冒充已确认配置。
+  - [x] 用户可将每项建议标记为`confirmed`、`modified`或`rejected`，编辑保存为`user_edited`新修订，保留生成所用诊断修订、需求ID和规则ID。
+  - [x] API、Vue编辑界面、MySQL/SQLite仓储、迁移升降级及合成TAD端到端流程通过测试；契约禁止额外结果或预期数值字段。
+- [ ] 后续：锁定可执行实验运行清单并导入真实结果；必须校验配置哈希、运行来源和结果Schema，不由计划器生成数值。

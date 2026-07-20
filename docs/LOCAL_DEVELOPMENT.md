@@ -388,6 +388,48 @@ curl -X POST http://127.0.0.1:8000/api/v1/research/projects/tad-noise-study/clai
 或上一诊断修订。所有自动文案来自`project-claim-evidence-rules-v1`确定性模板；本轮未调用模型，
 也不评估实验可行性或研究创新性。
 
+### Project Claim到实验与图表计划
+
+Claim创建后，可选择一个或多个同项目Claim版本生成第一版计划：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/research/projects/tad-noise-study/experiment-plans \
+  -H 'Content-Type: application/json' \
+  -d '{"expected_latest_revision":0,"claim_versions":[1]}'
+```
+
+响应包含八类`experiments`、相互闭合的`artifacts`、`generation_basis`和逐实验
+`quality_report`。每个ExperimentPlan保存所关联的一个或多个稳定`claim_version_id`，RQ和
+Hypothesis必须与这些Claim版本原文一致。Dataset、Baseline、Variables、Controls、Metrics、
+ExpectedArtifact、Boundary和Status均为计划字段，不是实验结果。
+
+自动生成器不知道用户最终选择的数据集、强基线实现和指标定义，所以使用
+`dataset_pending_user_selection`、`strong_baseline_pending_user_selection`和
+`primary_metric_to_predeclare`等显式待办；待选强基线默认为`excluded`，质量检查会提示
+`missing_strong_baseline`。团队必须在确认前替换这些待办，不能把它们写成已经执行的配置。
+
+图表计划明确保存`artifact_kind=figure/table`、形式理由、横纵轴或行列设计、数据字段、支持Claim
+以及常见误读。计划器不接受额外结果字段，不生成`metric_value`、预期提升或图表数值。五类检查为：
+`missing_strong_baseline`、`data_leakage`、`unfair_setup`、`metric_inconsistency`和
+`overclaiming`。
+
+前端在同一`#project-claim`工作区编辑计划。每个Experiment/Artifact可以标记为`suggested`、
+`confirmed`、`modified`或`rejected`；保存调用：
+
+```text
+PUT /api/v1/research/projects/{project_id}/experiment-plans/{revision}
+```
+
+后端追加`user_edited`新修订并重新计算质量检查，不覆盖旧版本。以下接口用于读取历史和指定修订：
+
+```text
+GET /api/v1/research/projects/{project_id}/experiment-plans
+GET /api/v1/research/projects/{project_id}/experiment-plans/{revision}
+```
+
+合成TAD端到端演示沿用`/research/project-claims/examples/tad`：先创建Claim，再生成并编辑计划。
+它只验证Claim→诊断→Experiment→Artifact关系和版本流转，不是实际实验结果或计划质量成绩。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。

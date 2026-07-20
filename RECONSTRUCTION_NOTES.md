@@ -46,5 +46,8 @@
 - 新增`0004_project_claim_versions`及内存/MySQL双存储。Claim版本不可变，以父版本、内容SHA-256和乐观锁串联；规则诊断和用户编辑保存为独立修订。默认离线模式只用进程内存，不能把它描述为跨重启持久化。
 - 固定规则规划器输出主实验、强基线、公平比较、消融、参数敏感性、鲁棒性、效率和失败案例八项证据需求，每项显式包含Claim原文、变量、输出、推荐图表及证明边界。语言组织当前也是确定性模板，未接入模型；可行性与创新性均保持`not_assessed`。
 - Vue工作区支持Claim版本历史、合成TAD示例和诊断修订。该示例不含实验结果，不是研究结论或真实质量成绩。
+- 已新增`0005_experiment_artifact_plans`，把一个或多个稳定Claim版本及其最新诊断修订转成八类ExperimentPlan和闭合ArtifactPlan。每次生成或用户编辑都会追加计划修订；MySQL关系表显式保存Experiment/Artifact到Claim版本的链接，离线默认仍只保存在进程内存。
+- 实验计划保留RQ/Hypothesis原文，结构化记录Dataset、Baseline、Variables、Controls、Metrics、ExpectedArtifact、Boundary和Status。图表计划记录Figure/Table选择理由、轴或行列、数据字段、Claim链接与常见误读；不含结果值或预期提升数值字段。
+- 固定质量规则逐实验检查强基线缺失、数据泄漏、不公平设置、指标不一致和过度结论。自动生成时未知数据集和强基线明确保留为待用户选择，其中强基线检查会保持警告；`confirmed/modified/rejected`状态是用户决定，不等于实验已执行或Claim已验证。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

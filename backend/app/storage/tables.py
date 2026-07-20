@@ -464,3 +464,57 @@ class EvidenceDiagnosisVersionRow(Base):
     language_organizer: Mapped[str] = mapped_column(String(64), nullable=False)
     diagnosis: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExperimentPlanVersionRow(Base):
+    __tablename__ = "experiment_plan_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "revision", name="uq_experiment_plans_project_revision"
+        ),
+    )
+
+    plan_revision_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    plan_id: Mapped[str] = mapped_column(String(191), nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_plan_revision_id: Mapped[str | None] = mapped_column(
+        String(191),
+        ForeignKey("experiment_plan_versions.plan_revision_id", ondelete="RESTRICT"),
+    )
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    planner_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    plan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExperimentPlanClaimLinkRow(Base):
+    __tablename__ = "experiment_plan_claim_links"
+
+    plan_revision_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("experiment_plan_versions.plan_revision_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    experiment_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    claim_version_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("project_claim_versions.claim_version_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+
+class ArtifactPlanClaimLinkRow(Base):
+    __tablename__ = "artifact_plan_claim_links"
+
+    plan_revision_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("experiment_plan_versions.plan_revision_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    artifact_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    claim_version_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("project_claim_versions.claim_version_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
