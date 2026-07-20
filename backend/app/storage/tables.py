@@ -518,3 +518,39 @@ class ArtifactPlanClaimLinkRow(Base):
         ForeignKey("project_claim_versions.claim_version_id", ondelete="RESTRICT"),
         primary_key=True,
     )
+
+
+class ExperimentRunManifestVersionRow(Base):
+    __tablename__ = "experiment_run_manifest_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "revision", name="uq_experiment_run_manifests_run_revision"
+        ),
+        Index(
+            "ix_experiment_run_manifests_project_run", "project_id", "run_id"
+        ),
+    )
+
+    run_revision_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_run_revision_id: Mapped[str | None] = mapped_column(
+        String(191),
+        ForeignKey(
+            "experiment_run_manifest_versions.run_revision_id", ondelete="RESTRICT"
+        ),
+    )
+    plan_revision_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("experiment_plan_versions.plan_revision_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    experiment_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_configuration_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_provenance: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    data_sha256: Mapped[str | None] = mapped_column(String(64))
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

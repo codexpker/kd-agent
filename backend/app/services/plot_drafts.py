@@ -4,6 +4,7 @@ import io
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,7 @@ import uuid
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,8 @@ class PlotExecutionError(RuntimeError):
 class _StoredUpload:
     report: DatasetUploadReport
     normalized_rows: list[dict[str, Any]]
+    run_id: str | None
+    expires_at: datetime | None
 
 
 class InMemoryPlotDraftStore:
@@ -69,15 +72,51 @@ class InMemoryPlotDraftStore:
         self.draft_directories: dict[str, Path] = {}
 
     def save_upload(
-        self, report: DatasetUploadReport, normalized_rows: list[dict[str, Any]]
+        self,
+        report: DatasetUploadReport,
+        normalized_rows: list[dict[str, Any]],
+        run_id: str | None,
+        expires_at: datetime | None,
     ) -> None:
-        self.uploads[report.upload_id] = _StoredUpload(report, normalized_rows)
+        self.uploads[report.upload_id] = _StoredUpload(
+            report, normalized_rows, run_id, expires_at
+        )
 
     def get_upload(self, upload_id: str) -> _StoredUpload:
         try:
-            return self.uploads[upload_id]
+            upload = self.uploads[upload_id]
         except KeyError as exc:
             raise DatasetUploadError("uploaded dataset was not found or has expired") from exc
+        if upload.expires_at is not None and upload.expires_at <= datetime.now(UTC):
+            del self.uploads[upload_id]
+            raise DatasetUploadError("uploaded dataset was not found or has expired")
+        return upload
+
+    def purge_upload(self, upload_id: str) -> None:
+        self.uploads.pop(upload_id, None)
+
+    def purge_run(self, run_id: str) -> None:
+        upload_ids = [
+            upload_id
+            for upload_id, upload in self.uploads.items()
+            if upload.run_id == run_id
+        ]
+        for upload_id in upload_ids:
+            del self.uploads[upload_id]
+        draft_ids = [
+            draft_id
+            for draft_id, draft in self.drafts.items()
+            if draft.run_id == run_id
+        ]
+        for draft_id in draft_ids:
+            directory = self.draft_directories.pop(draft_id, None)
+            self.drafts.pop(draft_id, None)
+            if (
+                directory is not None
+                and directory.is_dir()
+                and directory.resolve().is_relative_to(self.root.resolve())
+            ):
+                shutil.rmtree(directory)
 
     def save_draft(self, draft: PlotDraft, directory: Path) -> None:
         self.drafts[draft.draft_id] = draft
@@ -561,15 +600,32 @@ class PlotDraftService:
         self.validator = DatasetValidator()
         self.checker = PlotIntegrityChecker()
 
-    def upload(self, project_id: str, filename: str, payload: bytes) -> DatasetUploadReport:
+    def upload(
+        self,
+        project_id: str,
+        filename: str,
+        payload: bytes,
+        *,
+        run_id: str | None = None,
+        retention_hours: int = 24,
+    ) -> DatasetUploadReport:
         report, rows = self.validator.validate(project_id, filename, payload)
-        self.store.save_upload(report, rows)
+        expires_at = (
+            None
+            if run_id is None
+            else datetime.now(UTC) + timedelta(hours=retention_hours)
+        )
+        self.store.save_upload(report, rows, run_id, expires_at)
         return report
 
     def generate(self, project_id: str, request: PlotGenerationRequest) -> PlotDraft:
         upload = self.store.get_upload(request.upload_id)
         if upload.report.project_id != project_id:
             raise DatasetUploadError("uploaded dataset belongs to a different project")
+        if upload.run_id != request.run_id:
+            raise DatasetUploadError(
+                "plot request run_id does not match the uploaded dataset binding"
+            )
         plan = self.experiment_plan_service.get(project_id, request.plan_revision)
         artifact = self._artifact(plan, request.artifact_plan_id)
         if artifact.artifact_kind != "figure":
@@ -601,6 +657,7 @@ class PlotDraftService:
         draft = PlotDraft(
             draft_id=draft_id,
             project_id=project_id,
+            run_id=request.run_id,
             upload=upload.report,
             plan_revision=request.plan_revision,
             plan_revision_id=plan.plan_revision_id,

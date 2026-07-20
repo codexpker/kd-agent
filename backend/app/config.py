@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     embedding_backend: str = "hash"
     document_structure_backend: str = "gold"
     project_claim_backend: str = "memory"
+    experiment_run_backend: str = "memory"
     cors_origins: str = "http://localhost:5173"
     mysql_url: str = "mysql+pymysql://kd_agent:kd_agent_local@127.0.0.1:3306/kd_agent"
     neo4j_uri: str = "bolt://127.0.0.1:7687"

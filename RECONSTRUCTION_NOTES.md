@@ -52,5 +52,8 @@
 - 已实现用户CSV/JSON到图表草稿的受控闭环：上传只记录`user_uploaded_not_independently_verified`，验证Schema/类型/缺失值和关键字段后，由固定`matplotlib-traceable-v1`模板生成代码。服务端不接受用户代码，不插补或生成结果；只有代码哈希未变化、完整性检查无错误且隔离子进程成功时才提供图像。
 - 每个绘图点记录源CSV行号或JSON记录号及聚合规则；运行清单保存原始/规范化数据哈希、代码哈希、生成参数、Python/Matplotlib版本和导出文件。完整包可下载，但上传与产物当前只在操作系统临时目录和进程内索引中保存，重启即失效，不应宣称为MySQL权威实验记录。
 - 内置`synthetic_plot_smoke.csv`只有通用condition/variant/measurement数值，用于CI验证PNG/SVG生成、失败语义和逐点溯源；不是TAD结果、论文实验或比赛成绩。
+- 已新增`0006_experiment_run_manifests`和离线内存/MySQL双存储，把运行配置、用户自报身份、用户报告执行环境、结果来源、数据绑定、绘图终态和删除/到期事件保存为不可变修订。配置哈希由规范JSON计算，秘密样式参数键拒绝入库；每个运行闭合到一个稳定计划修订和Experiment。
+- `user_declared`与`externally_verifiable`已在契约层区分；外部可核验记录必须有签发方、证据引用和SHA-256，但固定保持`pending_external_verification`。当前没有认证用户或受信核验者系统，因此不能宣称身份已认证或证据已验证。
+- 上传原始字节永不写MySQL；`process_session`只在受控临时目录保留规范化数据并设置最长72小时到期，进程退出可能更早清除；`metadata_only`立即只留哈希/Schema且不能绘图。显式删除或到期会清理临时图表并追加审计修订，MySQL只保留元数据。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

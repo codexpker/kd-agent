@@ -40,6 +40,11 @@ class DatasetUploadReport(StrictModel):
 
 class PlotGenerationRequest(StrictModel):
     upload_id: str
+    run_id: str | None = Field(default=None, max_length=191)
+    actor_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$",
+    )
     plan_revision: int = Field(ge=1)
     artifact_plan_id: str = Field(min_length=1, max_length=191)
     plot_kind: Literal["line", "bar", "scatter"]
@@ -63,6 +68,8 @@ class PlotGenerationRequest(StrictModel):
 
     @model_validator(mode="after")
     def validate_plot_options(self) -> "PlotGenerationRequest":
+        if bool(self.run_id) != bool(self.actor_id):
+            raise ValueError("run_id and actor_id must be provided together")
         if len(set(self.export_formats)) != len(self.export_formats):
             raise ValueError("export_formats must be unique")
         if not self.export_formats:
@@ -115,6 +122,7 @@ class PlotExecution(StrictModel):
 class PlotDraft(StrictModel):
     draft_id: str
     project_id: str
+    run_id: str | None
     upload: DatasetUploadReport
     plan_revision: int
     plan_revision_id: str

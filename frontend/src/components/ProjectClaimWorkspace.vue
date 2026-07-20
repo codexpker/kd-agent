@@ -191,6 +191,38 @@ type PlotDraft = {
     download_bundle: string | null
   }
 }
+type ExperimentRunManifest = {
+  run_revision_id: string
+  run_id: string
+  revision: number
+  plan_revision_id: string
+  plan_revision: number
+  experiment_id: string
+  identity: { actor_id: string; display_name: string; assurance: 'self_asserted_local_identity' }
+  run_configuration_sha256: string
+  result_provenance: 'user_declared' | 'externally_verifiable'
+  external_verification: null | {
+    issuer: string
+    evidence_reference: string
+    evidence_sha256: string
+    status: 'pending_external_verification'
+  }
+  lifecycle_policy: {
+    mode: 'process_session' | 'metadata_only'
+    normalized_retention_hours: number
+    raw_upload_persisted: false
+    mysql_payload_persisted: false
+  }
+  status: 'registered' | 'data_attached' | 'plot_succeeded' | 'plot_failed' | 'data_deleted' | 'data_expired'
+  data_asset: null | {
+    data_sha256: string
+    schema_sha256: string
+    lifecycle_state: 'normalized_process_local' | 'metadata_only' | 'deleted' | 'expired'
+    expires_at: string | null
+  }
+  plot_execution: null | { draft_id: string; execution_status: 'succeeded' | 'failed'; code_sha256: string }
+  created_at: string
+}
 
 const projectId = ref('tad-noise-study')
 const researchQuestion = ref('')
@@ -224,6 +256,25 @@ const plotErrorBar = ref<'none' | 'standard_deviation'>('standard_deviation')
 const plotYAxisMin = ref('')
 const plotFormats = ref<Array<'png' | 'svg' | 'pdf'>>(['png', 'svg'])
 const plotDraft = ref<PlotDraft | null>(null)
+const runManifest = ref<ExperimentRunManifest | null>(null)
+const runHistory = ref<ExperimentRunManifest[]>([])
+const selectedRunExperimentId = ref('')
+const runActorId = ref('local-researcher')
+const runDisplayName = ref('Local Researcher')
+const runEntrypoint = ref('python train.py --config configs/experiment.yaml')
+const runCodeRevision = ref('git:replace-with-actual-commit')
+const runDatasetVersion = ref('replace-with-actual-dataset-version')
+const runSeeds = ref('1')
+const runOperatingSystem = ref('user-reported operating system')
+const runPythonVersion = ref('user-reported Python version')
+const runHardware = ref('user-reported hardware')
+const runFrameworkName = ref('pytorch')
+const runFrameworkVersion = ref('user-reported version')
+const runProvenance = ref<'user_declared' | 'externally_verifiable'>('user_declared')
+const runExternalIssuer = ref('')
+const runExternalReference = ref('')
+const runExternalSha256 = ref('')
+const runLifecycleMode = ref<'process_session' | 'metadata_only'>('process_session')
 
 const expectedLatestVersion = computed(
   () => history.value.at(-1)?.version ?? 0,
@@ -235,7 +286,11 @@ const planIssues = computed(
   () => experimentPlan.value?.quality_report.checks.filter((item) => item.status !== 'pass') ?? [],
 )
 const figureArtifacts = computed(
-  () => experimentPlan.value?.artifacts.filter((item) => item.artifact_kind === 'figure') ?? [],
+  () => experimentPlan.value?.artifacts.filter(
+    (item) => item.artifact_kind === 'figure'
+      && (!(runManifest.value?.experiment_id ?? selectedRunExperimentId.value)
+        || item.source_experiment_ids.includes(runManifest.value?.experiment_id ?? selectedRunExperimentId.value)),
+  ) ?? [],
 )
 const plotImageUrl = computed(() => {
   if (!plotDraft.value || plotDraft.value.execution.status !== 'succeeded') return ''
@@ -575,8 +630,8 @@ async function responseError(response: Response, fallback: string): Promise<stri
 }
 
 async function uploadPlotDataset() {
-  if (!selectedPlotFile.value) {
-    error.value = '请先选择你真实上传的 CSV 或 JSON 文件。'
+  if (!selectedPlotFile.value || !runManifest.value) {
+    error.value = '请先登记运行清单，再选择你真实上传的 CSV 或 JSON 文件。'
     return
   }
   loading.value = true
@@ -585,12 +640,16 @@ async function uploadPlotDataset() {
   try {
     const body = new FormData()
     body.append('file', selectedPlotFile.value)
+    body.append('actor_id', runActorId.value)
     const response = await fetch(
-      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/uploads`,
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/experiment-runs/${encodeURIComponent(runManifest.value.run_id)}/data`,
       { method: 'POST', body },
     )
     if (!response.ok) throw new Error(await responseError(response, '数据上传或 Schema 校验失败。'))
-    uploadReport.value = await response.json()
+    const payload = await response.json()
+    uploadReport.value = payload.upload
+    runManifest.value = payload.run
+    await loadRunHistory()
     const numeric = uploadReport.value!.columns.find((item) => ['integer', 'number'].includes(item.inferred_type))
     const categorical = uploadReport.value!.columns.find((item) => item.inferred_type === 'string')
     plotXColumn.value = categorical?.name ?? uploadReport.value!.columns[0]?.name ?? ''
@@ -604,7 +663,7 @@ async function uploadPlotDataset() {
 }
 
 async function generatePlotCode() {
-  if (!experimentPlan.value || !uploadReport.value || !selectedArtifactPlanId.value) {
+  if (!experimentPlan.value || !runManifest.value || !uploadReport.value || !selectedArtifactPlanId.value) {
     error.value = '需要已加载的实验计划、已校验数据和一个 Figure ArtifactPlan。'
     return
   }
@@ -623,6 +682,8 @@ async function generatePlotCode() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           upload_id: uploadReport.value.upload_id,
+          run_id: runManifest.value?.run_id ?? null,
+          actor_id: runManifest.value ? runActorId.value : null,
           plan_revision: experimentPlan.value.revision,
           artifact_plan_id: selectedArtifactPlanId.value,
           plot_kind: plotKind.value,
@@ -667,6 +728,7 @@ async function executePlotCode() {
     if (!response.ok) throw new Error(await responseError(response, '绘图代码执行被拒绝。'))
     const payload = await response.json()
     plotDraft.value = payload.draft
+    await loadRunHistory()
     if (plotDraft.value!.execution.status !== 'succeeded') {
       throw new Error(plotDraft.value!.execution.error_message || '绘图代码执行失败；没有可展示图片。')
     }
@@ -681,6 +743,115 @@ async function executePlotCode() {
 function plotFileUrl(filename: string): string {
   if (!plotDraft.value) return '#'
   return `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/${plotDraft.value.draft_id}/files/${filename}`
+}
+
+async function registerExperimentRun() {
+  if (!experimentPlan.value || !selectedRunExperimentId.value) {
+    error.value = '请先选择一个 ExperimentPlan。'
+    return
+  }
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const seeds = runSeeds.value.split(',').map((item) => Number(item.trim())).filter(Number.isInteger)
+    const external = runProvenance.value === 'externally_verifiable'
+      ? {
+          issuer: runExternalIssuer.value,
+          evidence_reference: runExternalReference.value,
+          evidence_sha256: runExternalSha256.value,
+          status: 'pending_external_verification',
+        }
+      : null
+    const response = await fetch(
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/experiment-runs`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_revision: experimentPlan.value.revision,
+          experiment_id: selectedRunExperimentId.value,
+          identity: {
+            actor_id: runActorId.value,
+            display_name: runDisplayName.value,
+            assurance: 'self_asserted_local_identity',
+          },
+          run_configuration: {
+            entrypoint: runEntrypoint.value,
+            code_revision: runCodeRevision.value,
+            dataset_versions: [runDatasetVersion.value],
+            random_seeds: seeds,
+            command_arguments: [],
+            parameters: {},
+          },
+          execution_environment: {
+            source: 'user_reported',
+            operating_system: runOperatingSystem.value,
+            python_version: runPythonVersion.value,
+            hardware_summary: runHardware.value,
+            framework_versions: { [runFrameworkName.value]: runFrameworkVersion.value },
+            container_image_digest: null,
+          },
+          result_provenance: runProvenance.value,
+          external_verification: external,
+          lifecycle_policy: {
+            mode: runLifecycleMode.value,
+            normalized_retention_hours: runLifecycleMode.value === 'metadata_only' ? 0 : 24,
+            raw_upload_persisted: false,
+            mysql_payload_persisted: false,
+          },
+        }),
+      },
+    )
+    if (!response.ok) throw new Error(await responseError(response, '运行清单登记失败。'))
+    runManifest.value = await response.json()
+    runHistory.value = [runManifest.value!]
+    uploadReport.value = null
+    plotDraft.value = null
+    selectedArtifactPlanId.value = ''
+    notice.value = `已登记运行 ${runManifest.value!.run_id}；身份与环境均为用户自报，尚不构成外部验证。`
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadRunHistory() {
+  if (!runManifest.value) return
+  const response = await fetch(
+    `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/experiment-runs/${encodeURIComponent(runManifest.value.run_id)}/history`,
+  )
+  if (response.ok) {
+    runHistory.value = (await response.json()).revisions
+    runManifest.value = runHistory.value.at(-1) ?? runManifest.value
+  }
+}
+
+async function deleteRunData() {
+  if (!runManifest.value) return
+  loading.value = true
+  error.value = ''
+  try {
+    const response = await fetch(
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/experiment-runs/${encodeURIComponent(runManifest.value.run_id)}/data`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor_id: runActorId.value }),
+      },
+    )
+    if (!response.ok) throw new Error(await responseError(response, '数据删除失败。'))
+    runManifest.value = await response.json()
+    uploadReport.value = null
+    plotDraft.value = null
+    await loadRunHistory()
+    notice.value = '规范化数据与图表临时文件已删除；运行清单中的哈希和删除审计修订继续保留。'
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -937,12 +1108,66 @@ function plotFileUrl(filename: string): string {
         </div>
       </header>
 
+      <form class="run-registration" @submit.prevent="registerExperimentRun">
+        <header class="wide">
+          <div><h4>先登记实际运行清单</h4><p>配置哈希由服务端计算；当前身份和执行环境都是用户自报，不会自动升级成已验证事实。</p></div>
+          <span>immutable revision chain</span>
+        </header>
+        <label>ExperimentPlan
+          <select v-model="selectedRunExperimentId" required>
+            <option value="" disabled>请选择</option>
+            <option v-for="experiment in experimentPlan.experiments" :key="experiment.experiment_id" :value="experiment.experiment_id">
+              {{ experiment.experiment_id.split(':').at(-1) }} · {{ experiment.status }}
+            </option>
+          </select>
+        </label>
+        <label>用户自报 ID<input v-model="runActorId" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}" /></label>
+        <label>显示名<input v-model="runDisplayName" required /></label>
+        <label class="wide">实际入口命令<input v-model="runEntrypoint" required /></label>
+        <label>代码修订<input v-model="runCodeRevision" required /></label>
+        <label>数据集版本<input v-model="runDatasetVersion" required /></label>
+        <label>随机种子（逗号分隔）<input v-model="runSeeds" required /></label>
+        <label>运行系统<input v-model="runOperatingSystem" required /></label>
+        <label>Python 版本<input v-model="runPythonVersion" required /></label>
+        <label>硬件摘要<input v-model="runHardware" required /></label>
+        <label>框架<input v-model="runFrameworkName" required /></label>
+        <label>框架版本<input v-model="runFrameworkVersion" required /></label>
+        <label>结果来源
+          <select v-model="runProvenance"><option value="user_declared">用户声明结果</option><option value="externally_verifiable">外部可核验（仍待验证）</option></select>
+        </label>
+        <template v-if="runProvenance === 'externally_verifiable'">
+          <label>证据签发方<input v-model="runExternalIssuer" required /></label>
+          <label>证据引用<input v-model="runExternalReference" required /></label>
+          <label>证据 SHA-256<input v-model="runExternalSha256" required pattern="[0-9a-f]{64}" /></label>
+        </template>
+        <label>数据生命周期
+          <select v-model="runLifecycleMode"><option value="process_session">规范化数据保留最多24小时/进程期</option><option value="metadata_only">只留哈希与Schema，不可绘图</option></select>
+        </label>
+        <button class="wide" :disabled="loading">登记新的运行清单</button>
+      </form>
+
+      <section v-if="runManifest" class="run-manifest">
+        <header><div><h4>{{ runManifest.run_id }} · r{{ runManifest.revision }}</h4><p>{{ runManifest.experiment_id }}</p></div><strong>{{ runManifest.status }}</strong></header>
+        <code>配置 SHA-256 {{ runManifest.run_configuration_sha256 }}</code>
+        <div class="run-facts">
+          <span>身份：{{ runManifest.identity.assurance }}</span>
+          <span>结果：{{ runManifest.result_provenance }}</span>
+          <span v-if="runManifest.external_verification">{{ runManifest.external_verification.status }}</span>
+          <span>生命周期：{{ runManifest.lifecycle_policy.mode }}</span>
+          <span>修订数：{{ runHistory.length }}</span>
+        </div>
+        <div v-if="runHistory.length" class="run-revisions">
+          <span v-for="item in runHistory" :key="item.run_revision_id">r{{ item.revision }} · {{ item.status }}</span>
+        </div>
+        <button v-if="runManifest.data_asset && !['deleted', 'expired'].includes(runManifest.data_asset.lifecycle_state)" type="button" :disabled="loading" @click="deleteRunData">删除规范化数据与临时图</button>
+      </section>
+
       <section class="upload-panel">
         <label>真实 CSV / JSON
           <input type="file" accept=".csv,.json,text/csv,application/json" @change="selectPlotFile" />
         </label>
         <p>选择文件即表示它由你主动提供；系统只能记录来源为 user_uploaded，不能独立证明数据真实性。</p>
-        <button type="button" :disabled="loading || !selectedPlotFile" @click="uploadPlotDataset">上传并验证</button>
+        <button type="button" :disabled="loading || !selectedPlotFile || !runManifest" @click="uploadPlotDataset">上传、验证并绑定运行</button>
       </section>
 
       <section v-if="uploadReport" class="schema-report">
@@ -1038,7 +1263,8 @@ function plotFileUrl(filename: string): string {
 .diagnosis { margin-top: 65px; }.diagnosis-header { display: flex; justify-content: space-between; gap: 20px; align-items: end; border-bottom: 2px solid #dfff43; padding-bottom: 18px; }.diagnosis-header h3 { margin: 8px 0 0; font-size: 32px; }.diagnosis-header > div:last-child { display: flex; flex-wrap: wrap; gap: 6px; }.diagnosis-header span, .assessment-boundary span { padding: 6px 8px; border: 1px solid #68766e; color: #c5cec9; font-size: 10px; }.assessment-boundary { display: flex; gap: 8px; margin: 15px 0 25px; }.requirement-list { display: grid; gap: 20px; }.requirement-list > article { padding: 24px; border: 1px solid #526059; background: #1e2a24; }.requirement-list > article > header { display: grid; grid-template-columns: 55px 1fr 170px; gap: 12px; align-items: center; margin-bottom: 20px; }.requirement-list > article > header > span { color: #dfff43; font-size: 28px; }.requirement-list > article > header div { display: grid; gap: 4px; }.requirement-list > article > header b { font-size: 22px; }.requirement-list > article > header small { color: #859188; }.requirement-list > article > label { margin-top: 12px; }.requirement-list textarea[readonly] { background: #dfe1d7; }.variable-grid, .proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }.proof-grid { grid-template-columns: 1fr 1fr; }.artifact-editor { display: grid; grid-template-columns: 180px 1fr 2fr; gap: 10px; margin-top: 12px; }.save-diagnosis { width: 100%; margin-top: 22px; min-height: 50px; }
 .experiment-planning { margin-top: 95px; padding-top: 55px; border-top: 1px solid #526059; }.plan-heading { display: grid; grid-template-columns: 1fr minmax(280px, 420px); gap: 30px; align-items: end; }.plan-heading h3, .artifact-plans > header h3 { margin: 8px 0; font-size: 34px; }.plan-heading p { color: #abb6af; line-height: 1.6; }.claim-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 16px; border: 1px solid #526059; }.claim-selector label { display: flex; gap: 7px; align-items: center; font-size: 12px; }.claim-selector button { grid-column: 1 / -1; padding: 11px; border: 1px solid #dfff43; background: #dfff43; font-weight: 800; }.plan-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0; }.plan-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #c5cec9; font-size: 10px; }.quality-report { padding: 20px; border: 1px solid #68766e; background: #111a16; }.quality-report > header { display: flex; justify-content: space-between; align-items: center; }.quality-report h4, .quality-report p { margin: 3px 0; }.quality-report header p { color: #859188; font-size: 11px; }.quality-report strong { color: #dfff43; }.quality-report strong.danger { color: #ff9b76; }.quality-report article { display: grid; grid-template-columns: 210px 1fr; gap: 6px 15px; margin-top: 10px; padding: 11px; border-left: 4px solid #eccb53; background: #22271d; }.quality-report article.error { border-color: #f56a3b; }.quality-report article small { grid-column: 2; color: #abb6af; }.quality-pass { color: #bfe888; }.experiment-list { display: grid; gap: 24px; margin-top: 25px; }.experiment-list > article { padding: 26px; border: 1px solid #526059; background: #1b2721; }.experiment-list > article > header, .plan-subsection > header, .artifact-plans article > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }.experiment-list > article > header div { display: flex; align-items: center; gap: 13px; }.experiment-list > article > header span { color: #dfff43; font-size: 26px; }.experiment-list h4 { margin: 0; text-transform: uppercase; }.experiment-list select, .experiment-list input, .experiment-list textarea, .artifact-plans select, .artifact-plans input, .artifact-plans textarea { min-width: 0; padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; font: inherit; }.source-text { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }.source-text label, .plan-subsection label, .plan-variables label, .artifact-plan-grid label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.source-text textarea { background: #dfe1d7; }.plan-subsection { margin-top: 18px; padding-top: 15px; border-top: 1px dotted #68766e; }.plan-subsection h5 { margin: 0 0 10px; color: #dfff43; letter-spacing: 1px; }.plan-subsection header button { border: 1px solid #dfff43; background: transparent; color: #dfff43; padding: 7px 9px; }.dataset-grid, .controls-grid, .artifact-plan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }.wide { grid-column: 1 / -1; }.baseline-grid { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 9px; margin-top: 9px; }.baseline-grid button, .metric-grid button { border: 1px solid #f56a3b; background: transparent; color: #f6a181; }.metric-grid { display: grid; grid-template-columns: 1fr 190px 200px auto; gap: 8px; margin-top: 8px; }.plan-variables { margin-top: 18px; }.boundary-editor .proof-grid { margin-top: 0; }.link-note { margin: 14px 0 0; color: #859188; font-size: 10px; overflow-wrap: anywhere; }.artifact-plans { margin-top: 55px; }.artifact-plans > article { margin-top: 14px; padding: 22px; border: 1px solid #526059; }.artifact-plan-grid { margin-top: 14px; }.save-plan { background: #f56a3b; border-color: #f56a3b; color: #fff; }
 .plot-draft-workspace { margin-top: 95px; padding-top: 55px; border-top: 2px solid #f56a3b; }.plot-heading { display: flex; justify-content: space-between; gap: 28px; align-items: end; }.plot-heading h3 { margin: 8px 0; font-size: 36px; }.plot-heading p { color: #abb6af; line-height: 1.6; }.plot-policy { display: flex; flex-wrap: wrap; gap: 6px; }.plot-policy span, .execution-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #dfff43; font-size: 10px; }.upload-panel { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr auto; gap: 14px; align-items: end; margin-top: 25px; padding: 20px; border: 1px solid #68766e; background: #1b2721; }.upload-panel label, .plot-config label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.upload-panel p { margin: 0; color: #abb6af; font-size: 12px; }.upload-panel input, .plot-config input, .plot-config select { padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; }.upload-panel button, .plot-config button, .plot-result > button { padding: 11px 14px; border: 1px solid #dfff43; background: #dfff43; color: #17211d; font-weight: 800; }.schema-report, .plot-result { margin-top: 18px; padding: 22px; border: 1px solid #526059; background: #111a16; }.schema-report > header, .plot-result > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }.schema-report h4, .schema-report p, .plot-result h4, .plot-result p { margin: 3px 0; }.schema-report header p, .plot-result header p { color: #859188; font-size: 11px; overflow-wrap: anywhere; }.schema-report code { display: block; margin: 12px 0; color: #dfff43; overflow-wrap: anywhere; }.schema-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }.schema-columns article { display: grid; gap: 4px; padding: 12px; background: #1e2a24; }.schema-columns span, .schema-columns small { color: #abb6af; }.schema-issues p { padding: 8px; border-left: 3px solid #eccb53; background: #22271d; }.schema-issues p.error { border-color: #f56a3b; }.plot-config { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; margin-top: 18px; padding: 22px; border: 1px solid #68766e; }.plot-config fieldset { display: flex; gap: 12px; align-items: center; border: 1px solid #68766e; }.plot-config fieldset label { display: flex; align-items: center; }.plot-config .generate-code { grid-column: 1 / -1; }.plot-checks { display: grid; gap: 7px; margin: 18px 0; }.plot-checks article { display: grid; grid-template-columns: 210px 1fr; gap: 5px 12px; padding: 10px; border-left: 4px solid #75a986; background: #1e2a24; }.plot-checks article.warning { border-color: #eccb53; }.plot-checks article.error { border-color: #f56a3b; }.plot-checks small { grid-column: 2; color: #abb6af; }.plot-result details { margin: 16px 0; }.plot-result pre { max-height: 420px; overflow: auto; padding: 16px; background: #050806; color: #d5eadb; }.plot-result > button:disabled { opacity: .45; }.plot-result img { display: block; max-width: min(100%, 1000px); margin: 22px auto; padding: 10px; background: white; }.execution-meta, .download-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }.download-links a { padding: 10px 12px; border: 1px solid #dfff43; color: #dfff43; text-decoration: none; }.execution-failure { padding: 12px; background: #7b2c22; color: white; }
+.run-registration { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 24px; padding: 22px; border: 1px solid #68766e; background: #1b2721; }.run-registration > header, .run-manifest > header { display: flex; justify-content: space-between; gap: 15px; align-items: center; }.run-registration h4, .run-registration p, .run-manifest h4, .run-manifest p { margin: 3px 0; }.run-registration p, .run-manifest p { color: #abb6af; font-size: 11px; }.run-registration label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.run-registration input, .run-registration select { min-width: 0; padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; }.run-registration button { padding: 12px; border: 1px solid #f56a3b; background: #f56a3b; color: white; font-weight: 800; }.run-manifest { margin-top: 15px; padding: 20px; border: 1px solid #dfff43; background: #111a16; }.run-manifest code { display: block; margin: 12px 0; color: #dfff43; overflow-wrap: anywhere; }.run-facts, .run-revisions { display: flex; flex-wrap: wrap; gap: 7px; }.run-facts span, .run-revisions span { padding: 6px 8px; border: 1px solid #526059; color: #c5cec9; font-size: 10px; }.run-revisions { margin-top: 9px; }.run-manifest button { margin-top: 14px; padding: 9px 11px; border: 1px solid #f56a3b; background: transparent; color: #f6a181; }
 @media (max-width: 900px) { .claim-heading, .diagnosis-header { display: block; }.claim-heading button { margin-top: 12px; }.claim-form, .variable-grid, .artifact-editor { grid-template-columns: 1fr; }.existing-results article { grid-template-columns: 1fr; }.diagnosis-header > div:last-child { margin-top: 12px; } }
-@media (max-width: 900px) { .plan-heading, .source-text, .dataset-grid, .controls-grid, .artifact-plan-grid, .plot-config { grid-template-columns: 1fr; }.plot-heading, .upload-panel { display: grid; grid-template-columns: 1fr; }.baseline-grid, .metric-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.quality-report article, .plot-checks article { grid-template-columns: 1fr; }.quality-report article small, .plot-checks small { grid-column: 1; } }
+@media (max-width: 900px) { .plan-heading, .source-text, .dataset-grid, .controls-grid, .artifact-plan-grid, .plot-config, .run-registration { grid-template-columns: 1fr; }.plot-heading, .upload-panel { display: grid; grid-template-columns: 1fr; }.baseline-grid, .metric-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.quality-report article, .plot-checks article { grid-template-columns: 1fr; }.quality-report article small, .plot-checks small { grid-column: 1; } }
 @media (max-width: 640px) { .claim-workspace { padding: 55px 20px; }.project-toolbar, .proof-grid { grid-template-columns: 1fr; }.requirement-list > article, .experiment-list > article { padding: 17px; }.requirement-list > article > header { grid-template-columns: 45px 1fr; }.requirement-list > article > header select { grid-column: 2; }.assessment-boundary { display: grid; }.claim-selector { grid-template-columns: 1fr; }.quality-report > header { display: block; } }
 </style>

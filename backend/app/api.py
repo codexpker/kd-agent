@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, HTTPException, Path, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -22,6 +22,13 @@ from app.plot_draft_models import (
     PlotDraft,
     PlotExecutionResponse,
     PlotGenerationRequest,
+)
+from app.experiment_run_models import (
+    ExperimentRunCreateRequest,
+    ExperimentRunDataAttachResponse,
+    ExperimentRunDataDeleteRequest,
+    ExperimentRunHistory,
+    ExperimentRunManifest,
 )
 from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
@@ -49,6 +56,13 @@ from app.services.plot_drafts import (
     PlotDraftService,
     PlotExecutionError,
 )
+from app.services.experiment_runs import (
+    ExperimentRunIdentityError,
+    ExperimentRunNotFoundError,
+    ExperimentRunService,
+    ExperimentRunVersionConflictError,
+    InMemoryExperimentRunStore,
+)
 from app.services.research_opportunities import ResearchOpportunityService
 from app.services.research_planning import (
     CandidateNotFoundError,
@@ -60,6 +74,7 @@ router = APIRouter(prefix="/api/v1")
 _memory_project_claim_store = InMemoryProjectClaimStore()
 _memory_experiment_plan_store = InMemoryExperimentPlanStore()
 _memory_plot_draft_store = InMemoryPlotDraftStore()
+_memory_experiment_run_store = InMemoryExperimentRunStore()
 
 
 def _project_claim_service() -> ProjectClaimService:
@@ -101,6 +116,34 @@ def _experiment_plan_service() -> ExperimentPlanService:
 
 def _plot_draft_service() -> PlotDraftService:
     return PlotDraftService(_memory_plot_draft_store, _experiment_plan_service())
+
+
+def _experiment_run_service() -> ExperimentRunService:
+    settings = get_settings()
+    plan_service = _experiment_plan_service()
+    if settings.experiment_run_backend == "memory":
+        return ExperimentRunService(_memory_experiment_run_store, plan_service)
+    if settings.experiment_run_backend == "mysql":
+        if settings.project_claim_backend != "mysql":
+            raise RuntimeError(
+                "EXPERIMENT_RUN_BACKEND=mysql requires PROJECT_CLAIM_BACKEND=mysql"
+            )
+        from app.storage.runtime import get_experiment_run_repository
+
+        return ExperimentRunService(
+            get_experiment_run_repository(settings.mysql_url), plan_service
+        )
+    raise RuntimeError(
+        f"Unsupported experiment_run_backend: {settings.experiment_run_backend}"
+    )
+
+
+def _experiment_run_backend_errors() -> tuple[type[BaseException], ...]:
+    if get_settings().experiment_run_backend == "mysql":
+        from sqlalchemy.exc import SQLAlchemyError
+
+        return (SQLAlchemyError, RuntimeError, ImportError)
+    return (RuntimeError, ImportError)
 
 
 @router.get("/healthz")
@@ -290,6 +333,130 @@ def edit_project_experiment_plan(
 
 
 @router.post(
+    "/research/projects/{project_id}/experiment-runs",
+    response_model=ExperimentRunManifest,
+)
+def create_experiment_run(
+    project_id: str,
+    request: ExperimentRunCreateRequest,
+) -> ExperimentRunManifest:
+    backend_errors = _experiment_run_backend_errors()
+    try:
+        return _experiment_run_service().create(project_id, request)
+    except ExperimentPlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
+
+
+@router.get(
+    "/research/projects/{project_id}/experiment-runs/{run_id}",
+    response_model=ExperimentRunManifest,
+)
+def get_experiment_run(project_id: str, run_id: str) -> ExperimentRunManifest:
+    backend_errors = _experiment_run_backend_errors()
+    try:
+        run = _experiment_run_service().get(project_id, run_id)
+        if run.status == "data_expired":
+            _memory_plot_draft_store.purge_run(run_id)
+        return run
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
+
+
+@router.get(
+    "/research/projects/{project_id}/experiment-runs/{run_id}/history",
+    response_model=ExperimentRunHistory,
+)
+def experiment_run_history(project_id: str, run_id: str) -> ExperimentRunHistory:
+    backend_errors = _experiment_run_backend_errors()
+    try:
+        history = _experiment_run_service().history(project_id, run_id)
+        if history.revisions[-1].status == "data_expired":
+            _memory_plot_draft_store.purge_run(run_id)
+        return history
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
+
+
+@router.post(
+    "/research/projects/{project_id}/experiment-runs/{run_id}/data",
+    response_model=ExperimentRunDataAttachResponse,
+)
+async def attach_experiment_run_data(
+    project_id: str,
+    run_id: str,
+    actor_id: str = Form(...),
+    file: UploadFile = File(...),
+) -> ExperimentRunDataAttachResponse:
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="uploaded filename is required")
+    backend_errors = _experiment_run_backend_errors()
+    try:
+        run_service = _experiment_run_service()
+        current = run_service.assert_actor(project_id, run_id, actor_id)
+        payload = await file.read(MAX_UPLOAD_BYTES + 1)
+        plot_service = _plot_draft_service()
+        upload = plot_service.upload(
+            project_id,
+            file.filename,
+            payload,
+            run_id=run_id,
+            retention_hours=current.lifecycle_policy.normalized_retention_hours,
+        )
+        try:
+            updated = run_service.attach_data(project_id, run_id, actor_id, upload)
+        except Exception:
+            _memory_plot_draft_store.purge_upload(upload.upload_id)
+            raise
+        if current.lifecycle_policy.mode == "metadata_only":
+            _memory_plot_draft_store.purge_upload(upload.upload_id)
+        return ExperimentRunDataAttachResponse(run=updated, upload=upload)
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExperimentRunIdentityError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (DatasetUploadError, ExperimentRunVersionConflictError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
+    finally:
+        await file.close()
+
+
+@router.delete(
+    "/research/projects/{project_id}/experiment-runs/{run_id}/data",
+    response_model=ExperimentRunManifest,
+)
+def delete_experiment_run_data(
+    project_id: str,
+    run_id: str,
+    request: ExperimentRunDataDeleteRequest,
+) -> ExperimentRunManifest:
+    backend_errors = _experiment_run_backend_errors()
+    try:
+        updated = _experiment_run_service().delete_data(
+            project_id, run_id, request.actor_id
+        )
+        _memory_plot_draft_store.purge_run(run_id)
+        return updated
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExperimentRunIdentityError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ExperimentRunVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
+
+
+@router.post(
     "/research/projects/{project_id}/plot-drafts/uploads",
     response_model=DatasetUploadReport,
 )
@@ -318,7 +485,20 @@ def generate_plot_draft(
 ) -> PlotDraft:
     backend_errors = _project_claim_backend_errors()
     try:
+        if request.run_id and request.actor_id:
+            _experiment_run_service().assert_plot_binding(
+                project_id,
+                request.run_id,
+                request.actor_id,
+                request.plan_revision,
+                request.artifact_plan_id,
+                request.upload_id,
+            )
         return _plot_draft_service().generate(project_id, request)
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExperimentRunIdentityError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except (DatasetUploadError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ExperimentPlanNotFoundError as exc:
@@ -333,11 +513,26 @@ def generate_plot_draft(
 )
 def execute_plot_draft(project_id: str, draft_id: str) -> PlotExecutionResponse:
     try:
-        return _plot_draft_service().execute(project_id, draft_id)
+        response = _plot_draft_service().execute(project_id, draft_id)
+        if response.draft.run_id:
+            try:
+                _experiment_run_service().record_plot(
+                    project_id, response.draft.run_id, response.draft
+                )
+            except Exception:
+                _memory_plot_draft_store.purge_run(response.draft.run_id)
+                raise
+        return response
     except PlotDraftNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PlotExecutionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ExperimentRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ExperimentRunVersionConflictError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except _experiment_run_backend_errors() as exc:
+        raise HTTPException(status_code=503, detail="Experiment run backend unavailable") from exc
 
 
 @router.get(

@@ -74,6 +74,8 @@ EXPERIMENT_PLAN_TABLES = {
     "artifact_plan_claim_links",
 }
 
+EXPERIMENT_RUN_TABLES = {"experiment_run_manifest_versions"}
+
 
 class RecordingGraph:
     def __init__(self, error: Exception | None = None) -> None:
@@ -116,6 +118,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         *PDF_LAYOUT_TABLES,
         *PROJECT_CLAIM_TABLES,
         *EXPERIMENT_PLAN_TABLES,
+        *EXPERIMENT_RUN_TABLES,
     } <= tables
 
     gold_record_foreign_keys = inspector.get_foreign_keys("paper_gold_records")
@@ -161,6 +164,26 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "experiment_plan_versions",
         "project_claim_versions",
     }
+
+    run_manifest_foreign_keys = inspector.get_foreign_keys(
+        "experiment_run_manifest_versions"
+    )
+    assert {item["referred_table"] for item in run_manifest_foreign_keys} == {
+        "experiment_run_manifest_versions",
+        "experiment_plan_versions",
+    }
+
+    command.downgrade(config, "0005_experiment_artifact_plans")
+    plan_only_tables = set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+    assert not (EXPERIMENT_RUN_TABLES & plan_only_tables)
+    assert EXPERIMENT_PLAN_TABLES <= plan_only_tables
+
+    command.upgrade(config, "head")
+    assert EXPERIMENT_RUN_TABLES <= set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
 
     command.downgrade(config, "0004_project_claim_versions")
     claim_only_tables = set(
@@ -214,6 +237,7 @@ def test_sqlalchemy_metadata_contains_normalized_authority_entities() -> None:
         | PDF_LAYOUT_TABLES
         | PROJECT_CLAIM_TABLES
         | EXPERIMENT_PLAN_TABLES
+        | EXPERIMENT_RUN_TABLES
     ) <= set(
         Base.metadata.tables
     )

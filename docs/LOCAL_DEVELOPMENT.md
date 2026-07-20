@@ -476,6 +476,64 @@ POST /api/v1/research/projects/{project_id}/plot-drafts/{draft_id}/execute
 上传和草稿当前保存在操作系统临时目录及进程内索引，API进程重启后失效。仓库内的
 `synthetic_plot_smoke.csv`只验证绘图程序和溯源闭合，不是论文、TAD或比赛实验成绩。
 
+### 持久化实验运行清单与数据生命周期
+
+运行清单默认沿用离线内存模式。要让清单修订跨重启保存到MySQL，计划与Claim也必须使用同一
+MySQL权威库：
+
+```dotenv
+PROJECT_CLAIM_BACKEND=mysql
+EXPERIMENT_RUN_BACKEND=mysql
+```
+
+运行`python -m alembic upgrade head`升级到`0006_experiment_run_manifests`。数据库只保存运行清单、
+配置/数据/Schema/绘图代码哈希和生命周期状态，不保存上传CSV/JSON的原始字节或规范化数据载荷。
+默认`EXPERIMENT_RUN_BACKEND=memory`继续支持完全离线演示，但不跨进程保存清单。
+
+先从现有计划中选择一个Experiment并登记实际运行：
+
+```text
+POST /api/v1/research/projects/{project_id}/experiment-runs
+```
+
+请求记录以下内容：
+
+- `plan_revision + experiment_id`；
+- 自报`actor_id/display_name`，身份保证固定为`self_asserted_local_identity`；
+- 实际入口命令、代码修订、数据集版本、随机种子、命令参数和普通JSON参数；
+- 用户报告的操作系统、Python、硬件、框架版本和可选容器镜像摘要；
+- `user_declared`或`externally_verifiable`结果来源；
+- `process_session`或`metadata_only`数据生命周期。
+
+服务端按键排序和规范JSON序列化计算`run_configuration_sha256`。任何名称包含password、secret、
+token或API key语义的参数键会被拒绝，密钥只能留在实验环境变量或秘密管理系统中。
+
+`externally_verifiable`不是“已验证”。它必须带签发方、引用和证据文件SHA-256，且状态只能为
+`pending_external_verification`；当前没有受信任核验账号或审批端点，上传者不能自行升级状态。
+
+将数据绑定到运行时必须再次提交同一自报`actor_id`：
+
+```text
+POST /api/v1/research/projects/{project_id}/experiment-runs/{run_id}/data
+```
+
+`process_session`把规范化数据保存在受控临时目录，最长可配置72小时，但进程退出时可能更早清除；
+`metadata_only`立即丢弃可绘图数据，只保留文件哈希、Schema哈希、行数和审计修订。原始上传字节在
+两种模式下都不会写MySQL或长期文件系统。
+
+绘图请求增加`run_id + actor_id`。后端同时检查运行的计划修订、Experiment、上传ID和ArtifactPlan
+关系；跨运行、跨Experiment或已删除/到期数据都不能生成图。执行终态追加`plot_succeeded`或
+`plot_failed`修订。读取历史和显式删除接口为：
+
+```text
+GET    /api/v1/research/projects/{project_id}/experiment-runs/{run_id}/history
+DELETE /api/v1/research/projects/{project_id}/experiment-runs/{run_id}/data
+```
+
+删除会清除规范化数据、生成代码、图像和下载包，但保留包含数据SHA-256及删除时间的审计修订。
+本地`actor_id`只是防止界面误操作的自报绑定，不是安全认证；多用户部署前必须接入真正的认证、
+授权、加密对象存储和可信外部核验流程。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。
