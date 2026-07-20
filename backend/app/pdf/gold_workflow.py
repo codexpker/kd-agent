@@ -130,6 +130,19 @@ class LayoutGoldCaseManifest(BaseModel):
                 )
             if self.workflow_status != "blocked":
                 raise ValueError("case without annotator B must remain blocked")
+        elif self.annotation_status == "needs_second_annotator":
+            raise ValueError(
+                "case with annotator B cannot remain needs_second_annotator"
+            )
+        expected_workflow = {
+            "independent_annotation_pending": "annotation_in_progress",
+            "needs_adjudication": "needs_adjudication",
+            "adjudicated": "adjudicated",
+        }.get(self.annotation_status)
+        if expected_workflow and self.workflow_status != expected_workflow:
+            raise ValueError(
+                "workflow_status must agree with the annotation workflow state"
+            )
         if self.annotation_status == "adjudicated" and self.adjudicator_id is None:
             raise ValueError("adjudicated case requires an independent adjudicator")
         return self
@@ -157,6 +170,15 @@ class LayoutGoldDiffReport(BaseModel):
     difference_count: int = Field(ge=0)
     differences: list[AnnotationDifference]
 
+    @model_validator(mode="after")
+    def validate_difference_inventory(self) -> "LayoutGoldDiffReport":
+        if self.difference_count != len(self.differences):
+            raise ValueError("difference_count must equal the differences list length")
+        ids = [item.difference_id for item in self.differences]
+        if len(ids) != len(set(ids)):
+            raise ValueError("difference identifiers must be unique")
+        return self
+
 
 class AdjudicationDecision(BaseModel):
     difference_id: str
@@ -178,8 +200,15 @@ class LayoutGoldAdjudicationTemplate(BaseModel):
     adjudicator_id: str | None = None
     status: Literal["pending"] = "pending"
     final_gold_status: Literal["not_generated"] = "not_generated"
-    signoff_required: bool = True
+    signoff_required: Literal[True] = True
     decisions: list[AdjudicationDecision]
+
+    @model_validator(mode="after")
+    def validate_decision_inventory(self) -> "LayoutGoldAdjudicationTemplate":
+        ids = [item.difference_id for item in self.decisions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("adjudication difference identifiers must be unique")
+        return self
 
 
 class AnnotationImportResult(BaseModel):
@@ -191,6 +220,27 @@ class AnnotationImportResult(BaseModel):
     difference_report: LayoutGoldDiffReport | None = None
     adjudication_template: LayoutGoldAdjudicationTemplate | None = None
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_review_state(self) -> "AnnotationImportResult":
+        any_reports_present = (
+            self.difference_report is not None
+            or self.adjudication_template is not None
+        )
+        reports_present = (
+            self.difference_report is not None
+            and self.adjudication_template is not None
+        )
+        if self.status == "needs_second_annotator":
+            if self.annotator_b_id is not None or any_reports_present:
+                raise ValueError(
+                    "needs_second_annotator cannot contain B or review reports"
+                )
+        elif self.annotator_b_id is None or not reports_present:
+            raise ValueError(
+                "needs_adjudication requires annotator B and both review reports"
+            )
+        return self
 
 
 @dataclass(frozen=True)

@@ -5,6 +5,8 @@
     {
       "paper_id": "anomaly-transformer-2022",
       "case_manifest": "anomaly_transformer_layout_gold_manifest.json",
+      "local_pdf_candidate_detected": true,
+      "rights_confirmation_recorded": false,
       "rights_status": "needs_authorized_pdf",
       "annotation_status": "needs_second_annotator",
       "adjudication_status": "not_started",

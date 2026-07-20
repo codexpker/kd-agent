@@ -10,6 +10,9 @@ from app.cli import layout_gold_workflow as workflow_cli
 from app.pdf.contracts import ParsedSection, PersistenceRight
 from app.pdf.evaluation import LayoutGold
 from app.pdf.gold_workflow import (
+    AnnotationImportResult,
+    LayoutGoldAdjudicationTemplate,
+    LayoutGoldDiffReport,
     LayoutGoldCaseManifest,
     import_independent_annotations,
     plan_candidate_import,
@@ -80,6 +83,56 @@ def test_pending_anomaly_manifest_records_both_real_blockers() -> None:
         for item in manifest.parser_candidates
     )
     assert not any("frozen" in item.casefold() for item in manifest.blockers)
+    assert any("rights basis" in item for item in manifest.blockers)
+
+
+def test_case_manifest_rejects_contradictory_annotation_state(
+    authorized_pdf: Path,
+) -> None:
+    case = _prepare(
+        authorized_pdf, annotator_a="reviewer-a", annotator_b="reviewer-b"
+    )
+    payload = case.manifest.model_dump(mode="json")
+    payload["annotation_status"] = "needs_second_annotator"
+    payload["workflow_status"] = "blocked"
+
+    with pytest.raises(ValidationError, match="cannot remain"):
+        LayoutGoldCaseManifest.model_validate(payload)
+
+
+def test_review_schemas_reject_inconsistent_inventory() -> None:
+    with pytest.raises(ValidationError, match="difference_count"):
+        LayoutGoldDiffReport(
+            paper_id=PAPER_ID,
+            file_sha256="a" * 64,
+            annotator_a_id="reviewer-a",
+            annotator_b_id="reviewer-b",
+            annotator_a_sha256="b" * 64,
+            annotator_b_sha256="c" * 64,
+            difference_count=1,
+            differences=[],
+        )
+
+    with pytest.raises(ValidationError, match="requires annotator B"):
+        AnnotationImportResult(
+            status="needs_adjudication",
+            paper_id=PAPER_ID,
+            file_sha256="a" * 64,
+            annotator_a_id="reviewer-a",
+            annotator_b_id=None,
+        )
+
+    with pytest.raises(ValidationError, match="literal_error"):
+        LayoutGoldAdjudicationTemplate(
+            paper_id=PAPER_ID,
+            file_sha256="a" * 64,
+            annotator_a_id="reviewer-a",
+            annotator_b_id="reviewer-b",
+            annotator_a_sha256="b" * 64,
+            annotator_b_sha256="c" * 64,
+            signoff_required=False,
+            decisions=[],
+        )
 
 
 def test_human_annotation_template_is_blank_and_single_reviewer() -> None:

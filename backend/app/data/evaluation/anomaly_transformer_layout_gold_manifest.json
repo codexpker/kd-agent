@@ -34,13 +34,13 @@
     }
   ],
   "blockers": [
-    "No user-provided, open-licensed or institution-authorized PDF exists in the workspace.",
+    "A local Anomaly Transformer PDF candidate is present, but its rights basis and source provenance have not been confirmed.",
     "MySQL has no PdfSource for this paper; its only PaperSource is metadata_only with full_text_rights_confirmed=false.",
     "A distinct second annotator and an independent adjudicator have not been registered."
   ],
   "next_actions": [
-    "A team member supplies a lawful PDF copy without committing it to Git.",
-    "Record source description or official URL, rights basis, confirmer and rights note.",
+    "Confirm whether the local candidate is an open-full-text, user-private-copy or institution-authorized source.",
+    "Record source description or official URL, rights basis, confirmer and rights note without committing the PDF.",
     "Run layout_gold_workflow prepare to hash the exact file and create a blank independent annotation case.",
     "Register two distinct annotators; neither copies the other annotation file or parser output.",
     "Generate versioned PyMuPDF, GROBID and MinerU candidates for the same SHA-256.",

@@ -197,8 +197,9 @@ python -m app.cli.evaluate_pdf_layout \
 
 ### Step 4b 第一篇真实版面Gold工作流与质控
 
-2026-07-20本地审计结论：工作区没有Anomaly Transformer PDF；MySQL没有该论文的`PdfSource`
-或解析运行，唯一PaperSource为`metadata_only`且`full_text_rights_confirmed=false`。仓库也没有
+2026-07-20初次本地审计没有发现Anomaly Transformer PDF；随后用户指定了一个被Git忽略的本地
+候选PDF，但尚未确认其权利依据和来源记录。MySQL仍没有该论文的`PdfSource`或解析运行，唯一
+PaperSource为`metadata_only`且`full_text_rights_confirmed=false`。仓库也没有
 第二标注员或仲裁员身份记录。因此当前案例同时保持`rights_status=needs_authorized_pdf`、
 `annotation_status=needs_second_annotator`和`workflow_status=blocked`，没有真实版面Gold或真实
 解析器成绩。阻塞清单与数据清单分别位于：

@@ -39,7 +39,7 @@
   - [x] 生成JSON与Markdown报告；CI内置样例强制标记`synthetic_smoke_test`，不得作为真实解析成绩。
   - [x] 未配置GROBID或MinerU客户端时明确返回`unavailable`，不静默生成或替代解析结果。
 - [ ] Step 4b：建立Anomaly Transformer第一篇可审核真实版面Gold。
-  - [x] 审计本地文件和MySQL来源：当前无PDF、无`PdfSource`，唯一来源为未确认全文权利的`metadata_only`；未联网下载。
+  - [x] 审计本地文件和MySQL来源：初次审计无PDF；现已发现用户指定的本地候选PDF，但尚未确认权利依据。MySQL仍无`PdfSource`，唯一来源为未确认全文权利的`metadata_only`；未联网下载。
   - [x] 建立案例阻塞清单与数据清单，明确`needs_authorized_pdf`、`needs_second_annotator`，不标记frozen。
   - [x] 提供默认dry-run的授权PDF初始化、SHA-256/来源记录、PyMuPDF候选、GROBID/MinerU候选导入工具；不复制PDF或外部原始输出。
   - [x] 提供A/B独立空白标注、第二标注员显式注册、来源一致性校验、字段级差异报告和全未决仲裁模板；不自动覆盖分歧。
