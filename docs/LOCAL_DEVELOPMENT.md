@@ -430,6 +430,52 @@ GET /api/v1/research/projects/{project_id}/experiment-plans/{revision}
 合成TAD端到端演示沿用`/research/project-claims/examples/tad`：先创建Claim，再生成并编辑计划。
 它只验证Claim→诊断→Experiment→Artifact关系和版本流转，不是实际实验结果或计划质量成绩。
 
+### 用户实验数据到可追溯图表草稿
+
+在`#project-claim`工作区加载一个包含Figure ArtifactPlan的计划后，选择本地CSV或JSON上传。接口不接收
+URL、服务器文件路径或用户Python：
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/api/v1/research/projects/tad-noise-study/plot-drafts/uploads \
+  -F "file=@./my-real-results.csv;type=text/csv"
+```
+
+响应返回列类型、缺失值、行数和原始文件SHA-256。`authenticity_statement`固定为
+`user_uploaded_not_independently_verified`：这表示数据确由用户通过接口提供，不表示系统已核验实验真实发生。
+CSV使用原始文件行号，JSON使用数组中从1开始的记录号。关键绘图字段如果缺失、类型不一致或含空值，
+下一步会硬阻断；系统不做插补。
+
+选择计划修订和其中一个Figure ArtifactPlan后生成代码：
+
+```text
+POST /api/v1/research/projects/{project_id}/plot-drafts
+```
+
+请求必须包含`upload_id`、`plan_revision`、`artifact_plan_id`、`plot_kind`、X/Y/可选分组字段、标题、
+轴标签、显式单位、聚合与误差线策略、坐标范围和PNG/SVG/PDF格式。服务端只生成
+`matplotlib-traceable-v1`固定模板，不接受客户端代码，也不会生成结果值。代码生成后尚无图片；先检查
+`plot-integrity-rules-v1`对截断轴、平滑、误差线和视觉风险的报告，再显式执行：
+
+```text
+POST /api/v1/research/projects/{project_id}/plot-drafts/{draft_id}/execute
+```
+
+执行器只运行哈希与草稿记录一致的服务端模板，使用独立临时目录、`python -I`、无shell、Agg后端、
+最小环境和20秒超时。当前是受控子进程边界，不是容器或虚拟机级恶意代码沙箱；安全性依赖“不接收
+用户代码”和固定模板。失败时响应包含`error_code/error_message`，并删除任何不完整图片。
+
+成功后可下载单个图或`plot-draft-bundle.zip`。可复现包包含：
+
+- `plot.py`和`plot_config.json`；
+- `data.normalized.json`（未插补，含源行号）；
+- `traceability.json`（每个图中数值对应的源行和聚合规则）；
+- `execution_manifest.json`（数据/代码哈希、生成参数、Python和Matplotlib版本）；
+- 实际成功导出的PNG/SVG/PDF。
+
+上传和草稿当前保存在操作系统临时目录及进程内索引，API进程重启后失效。仓库内的
+`synthetic_plot_smoke.csv`只验证绘图程序和溯源闭合，不是论文、TAD或比赛实验成绩。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。

@@ -49,5 +49,8 @@
 - 已新增`0005_experiment_artifact_plans`，把一个或多个稳定Claim版本及其最新诊断修订转成八类ExperimentPlan和闭合ArtifactPlan。每次生成或用户编辑都会追加计划修订；MySQL关系表显式保存Experiment/Artifact到Claim版本的链接，离线默认仍只保存在进程内存。
 - 实验计划保留RQ/Hypothesis原文，结构化记录Dataset、Baseline、Variables、Controls、Metrics、ExpectedArtifact、Boundary和Status。图表计划记录Figure/Table选择理由、轴或行列、数据字段、Claim链接与常见误读；不含结果值或预期提升数值字段。
 - 固定质量规则逐实验检查强基线缺失、数据泄漏、不公平设置、指标不一致和过度结论。自动生成时未知数据集和强基线明确保留为待用户选择，其中强基线检查会保持警告；`confirmed/modified/rejected`状态是用户决定，不等于实验已执行或Claim已验证。
+- 已实现用户CSV/JSON到图表草稿的受控闭环：上传只记录`user_uploaded_not_independently_verified`，验证Schema/类型/缺失值和关键字段后，由固定`matplotlib-traceable-v1`模板生成代码。服务端不接受用户代码，不插补或生成结果；只有代码哈希未变化、完整性检查无错误且隔离子进程成功时才提供图像。
+- 每个绘图点记录源CSV行号或JSON记录号及聚合规则；运行清单保存原始/规范化数据哈希、代码哈希、生成参数、Python/Matplotlib版本和导出文件。完整包可下载，但上传与产物当前只在操作系统临时目录和进程内索引中保存，重启即失效，不应宣称为MySQL权威实验记录。
+- 内置`synthetic_plot_smoke.csv`只有通用condition/variant/measurement数值，用于CI验证PNG/SVG生成、失败语义和逐点溯源；不是TAD结果、论文实验或比赛成绩。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

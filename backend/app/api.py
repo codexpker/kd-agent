@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, File, HTTPException, Path, UploadFile
+from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.gold_dataset import get_gold_dataset
@@ -15,6 +16,12 @@ from app.experiment_plan_models import (
     ExperimentPlanEditRequest,
     ExperimentPlanGenerateRequest,
     ExperimentPlanHistory,
+)
+from app.plot_draft_models import (
+    DatasetUploadReport,
+    PlotDraft,
+    PlotExecutionResponse,
+    PlotGenerationRequest,
 )
 from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
@@ -34,6 +41,14 @@ from app.services.experiment_plans import (
     ExperimentPlanVersionConflictError,
     InMemoryExperimentPlanStore,
 )
+from app.services.plot_drafts import (
+    MAX_UPLOAD_BYTES,
+    DatasetUploadError,
+    InMemoryPlotDraftStore,
+    PlotDraftNotFoundError,
+    PlotDraftService,
+    PlotExecutionError,
+)
 from app.services.research_opportunities import ResearchOpportunityService
 from app.services.research_planning import (
     CandidateNotFoundError,
@@ -44,6 +59,7 @@ from app.services.search import DemoSearchService
 router = APIRouter(prefix="/api/v1")
 _memory_project_claim_store = InMemoryProjectClaimStore()
 _memory_experiment_plan_store = InMemoryExperimentPlanStore()
+_memory_plot_draft_store = InMemoryPlotDraftStore()
 
 
 def _project_claim_service() -> ProjectClaimService:
@@ -81,6 +97,10 @@ def _experiment_plan_service() -> ExperimentPlanService:
     raise RuntimeError(
         f"Unsupported project_claim_backend: {settings.project_claim_backend}"
     )
+
+
+def _plot_draft_service() -> PlotDraftService:
+    return PlotDraftService(_memory_plot_draft_store, _experiment_plan_service())
 
 
 @router.get("/healthz")
@@ -267,6 +287,86 @@ def edit_project_experiment_plan(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except backend_errors as exc:
         raise HTTPException(status_code=503, detail="Experiment plan backend unavailable") from exc
+
+
+@router.post(
+    "/research/projects/{project_id}/plot-drafts/uploads",
+    response_model=DatasetUploadReport,
+)
+async def upload_plot_dataset(
+    project_id: str,
+    file: UploadFile = File(...),
+) -> DatasetUploadReport:
+    if not file.filename:
+        raise HTTPException(status_code=422, detail="uploaded filename is required")
+    try:
+        payload = await file.read(MAX_UPLOAD_BYTES + 1)
+        return _plot_draft_service().upload(project_id, file.filename, payload)
+    except DatasetUploadError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+
+
+@router.post(
+    "/research/projects/{project_id}/plot-drafts",
+    response_model=PlotDraft,
+)
+def generate_plot_draft(
+    project_id: str,
+    request: PlotGenerationRequest,
+) -> PlotDraft:
+    backend_errors = _project_claim_backend_errors()
+    try:
+        return _plot_draft_service().generate(project_id, request)
+    except (DatasetUploadError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ExperimentPlanNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except backend_errors as exc:
+        raise HTTPException(status_code=503, detail="Plot draft backend unavailable") from exc
+
+
+@router.post(
+    "/research/projects/{project_id}/plot-drafts/{draft_id}/execute",
+    response_model=PlotExecutionResponse,
+)
+def execute_plot_draft(project_id: str, draft_id: str) -> PlotExecutionResponse:
+    try:
+        return _plot_draft_service().execute(project_id, draft_id)
+    except PlotDraftNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PlotExecutionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/research/projects/{project_id}/plot-drafts/{draft_id}/files/{filename}"
+)
+def download_plot_draft_file(
+    project_id: str,
+    draft_id: str,
+    filename: str,
+) -> FileResponse:
+    try:
+        path = _plot_draft_service().file(project_id, draft_id, filename)
+    except PlotDraftNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    media_types = {
+        ".png": "image/png",
+        ".svg": "image/svg+xml",
+        ".pdf": "application/pdf",
+        ".json": "application/json",
+        ".zip": "application/zip",
+    }
+    return FileResponse(
+        path,
+        media_type=media_types.get(path.suffix.lower(), "application/octet-stream"),
+        filename=path.name,
+        content_disposition_type=(
+            "inline" if path.suffix.lower() in {".png", ".svg"} else "attachment"
+        ),
+    )
 
 
 @router.post("/tools/paper-deconstruct/{paper_id}", response_model=PaperDeconstruction)

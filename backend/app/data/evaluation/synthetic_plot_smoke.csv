@@ -1,0 +1,9 @@
+condition,variant,replicate,measurement
+low,A,1,1.2
+low,A,2,1.4
+high,A,1,2.1
+high,A,2,2.3
+low,B,1,1.0
+low,B,2,1.1
+high,B,1,1.8
+high,B,2,1.9

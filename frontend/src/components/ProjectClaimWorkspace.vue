@@ -146,6 +146,51 @@ type ExperimentPlanBundle = {
   quality_report: { checker_version: string; checks: QualityCheck[]; has_errors: boolean }
   created_at: string
 }
+type UploadColumn = {
+  name: string
+  inferred_type: 'integer' | 'number' | 'boolean' | 'string' | 'mixed' | 'null'
+  missing_count: number
+  non_missing_count: number
+}
+type DatasetUploadReport = {
+  upload_id: string
+  original_filename: string
+  source_format: 'csv' | 'json'
+  data_sha256: string
+  byte_size: number
+  row_count: number
+  columns: UploadColumn[]
+  issues: Array<{ code: string; severity: 'warning' | 'error'; field: string | null; message: string }>
+  valid: boolean
+  storage_policy: 'ephemeral_process_local'
+  authenticity_statement: 'user_uploaded_not_independently_verified'
+}
+type PlotDraft = {
+  draft_id: string
+  plan_revision: number
+  plan_revision_id: string
+  artifact_plan_id: string
+  artifact_claim_version_ids: string[]
+  code_generator_version: 'matplotlib-traceable-v1'
+  generated_code: string
+  code_sha256: string
+  normalized_data_sha256: string
+  config_sha256: string
+  quality_report: {
+    checker_version: 'plot-integrity-rules-v1'
+    has_errors: boolean
+    checks: Array<{ check_type: string; status: 'pass' | 'warning' | 'error'; message: string; remediation: string }>
+  }
+  execution: {
+    status: 'not_run' | 'succeeded' | 'failed'
+    error_code: string | null
+    error_message: string | null
+    library_versions: { python: string; matplotlib: string } | null
+    generated_files: string[]
+    traceability_file: string | null
+    download_bundle: string | null
+  }
+}
 
 const projectId = ref('tad-noise-study')
 const researchQuestion = ref('')
@@ -161,6 +206,24 @@ const notice = ref('')
 const selectedClaimVersions = ref<number[]>([])
 const experimentPlan = ref<ExperimentPlanBundle | null>(null)
 const experimentPlanHistory = ref<ExperimentPlanBundle[]>([])
+const selectedPlotFile = ref<File | null>(null)
+const uploadReport = ref<DatasetUploadReport | null>(null)
+const selectedArtifactPlanId = ref('')
+const plotKind = ref<'line' | 'bar' | 'scatter'>('line')
+const plotXColumn = ref('')
+const plotYColumn = ref('')
+const plotHueColumn = ref('')
+const plotTitle = ref('')
+const plotXLabel = ref('')
+const plotYLabel = ref('')
+const plotXUnit = ref('not_applicable')
+const plotYUnit = ref('unitless')
+const plotLegendTitle = ref('')
+const plotAggregation = ref<'none' | 'mean'>('mean')
+const plotErrorBar = ref<'none' | 'standard_deviation'>('standard_deviation')
+const plotYAxisMin = ref('')
+const plotFormats = ref<Array<'png' | 'svg' | 'pdf'>>(['png', 'svg'])
+const plotDraft = ref<PlotDraft | null>(null)
 
 const expectedLatestVersion = computed(
   () => history.value.at(-1)?.version ?? 0,
@@ -171,6 +234,15 @@ const expectedLatestPlanRevision = computed(
 const planIssues = computed(
   () => experimentPlan.value?.quality_report.checks.filter((item) => item.status !== 'pass') ?? [],
 )
+const figureArtifacts = computed(
+  () => experimentPlan.value?.artifacts.filter((item) => item.artifact_kind === 'figure') ?? [],
+)
+const plotImageUrl = computed(() => {
+  if (!plotDraft.value || plotDraft.value.execution.status !== 'succeeded') return ''
+  const filename = plotDraft.value.execution.generated_files.find((item) => item.endsWith('.png'))
+  if (!filename) return ''
+  return `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/${plotDraft.value.draft_id}/files/${filename}`
+})
 
 const requirementLabels: Record<string, string> = {
   main_experiment: '主实验',
@@ -486,6 +558,130 @@ function addMetric(experiment: ExperimentPlan) {
   experiment.metrics.push({ name: '', direction: 'descriptive', applies_to: 'all_methods' })
   experiment.status = 'modified'
 }
+
+function selectPlotFile(event: Event) {
+  selectedPlotFile.value = (event.target as HTMLInputElement).files?.[0] ?? null
+  uploadReport.value = null
+  plotDraft.value = null
+}
+
+async function responseError(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json()
+    return typeof payload.detail === 'string' ? payload.detail : fallback
+  } catch {
+    return fallback
+  }
+}
+
+async function uploadPlotDataset() {
+  if (!selectedPlotFile.value) {
+    error.value = '请先选择你真实上传的 CSV 或 JSON 文件。'
+    return
+  }
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const body = new FormData()
+    body.append('file', selectedPlotFile.value)
+    const response = await fetch(
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/uploads`,
+      { method: 'POST', body },
+    )
+    if (!response.ok) throw new Error(await responseError(response, '数据上传或 Schema 校验失败。'))
+    uploadReport.value = await response.json()
+    const numeric = uploadReport.value!.columns.find((item) => ['integer', 'number'].includes(item.inferred_type))
+    const categorical = uploadReport.value!.columns.find((item) => item.inferred_type === 'string')
+    plotXColumn.value = categorical?.name ?? uploadReport.value!.columns[0]?.name ?? ''
+    plotYColumn.value = numeric?.name ?? ''
+    notice.value = `已校验 ${uploadReport.value!.row_count} 行；未补造或填补任何值。请确认关键字段后生成代码。`
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function generatePlotCode() {
+  if (!experimentPlan.value || !uploadReport.value || !selectedArtifactPlanId.value) {
+    error.value = '需要已加载的实验计划、已校验数据和一个 Figure ArtifactPlan。'
+    return
+  }
+  if (!plotFormats.value.length) {
+    error.value = '至少选择一种导出格式。'
+    return
+  }
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const response = await fetch(
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_id: uploadReport.value.upload_id,
+          plan_revision: experimentPlan.value.revision,
+          artifact_plan_id: selectedArtifactPlanId.value,
+          plot_kind: plotKind.value,
+          x_column: plotXColumn.value,
+          y_column: plotYColumn.value,
+          hue_column: plotHueColumn.value || null,
+          title: plotTitle.value,
+          x_label: plotXLabel.value,
+          y_label: plotYLabel.value,
+          x_unit: plotXUnit.value,
+          y_unit: plotYUnit.value,
+          legend_title: plotHueColumn.value ? plotLegendTitle.value : null,
+          aggregation: plotAggregation.value,
+          error_bar: plotErrorBar.value,
+          smoothing: 'none',
+          y_axis_min: plotYAxisMin.value === '' ? null : Number(plotYAxisMin.value),
+          export_formats: plotFormats.value,
+          dpi: 300,
+        }),
+      },
+    )
+    if (!response.ok) throw new Error(await responseError(response, '绘图参数或关键字段无效。'))
+    plotDraft.value = await response.json()
+    notice.value = '代码已生成但尚未执行。检查完整性报告后，才能在受控进程中执行。'
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function executePlotCode() {
+  if (!plotDraft.value) return
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const response = await fetch(
+      `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/${plotDraft.value.draft_id}/execute`,
+      { method: 'POST' },
+    )
+    if (!response.ok) throw new Error(await responseError(response, '绘图代码执行被拒绝。'))
+    const payload = await response.json()
+    plotDraft.value = payload.draft
+    if (plotDraft.value!.execution.status !== 'succeeded') {
+      throw new Error(plotDraft.value!.execution.error_message || '绘图代码执行失败；没有可展示图片。')
+    }
+    notice.value = '执行成功。图像、代码、规范化数据、运行清单和逐点溯源文件可以下载。'
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loading.value = false
+  }
+}
+
+function plotFileUrl(filename: string): string {
+  if (!plotDraft.value) return '#'
+  return `/api/v1/research/projects/${encodeURIComponent(projectId.value)}/plot-drafts/${plotDraft.value.draft_id}/files/${filename}`
+}
 </script>
 
 <template>
@@ -728,6 +924,108 @@ function addMetric(experiment: ExperimentPlan) {
         </button>
       </template>
     </section>
+
+    <section v-if="experimentPlan" class="plot-draft-workspace">
+      <header class="plot-heading">
+        <div>
+          <p class="claim-eyebrow">REAL DATA → TRACEABLE PLOT DRAFT</p>
+          <h3>只用你上传的数据生成可执行绘图代码</h3>
+          <p>CSV/JSON 先做 Schema、类型、缺失值和关键字段检查。服务器不接收任意 Python，也不会补造实验结果。</p>
+        </div>
+        <div class="plot-policy">
+          <span>进程内临时存储</span><span>无自动插补</span><span>成功执行后才展示</span>
+        </div>
+      </header>
+
+      <section class="upload-panel">
+        <label>真实 CSV / JSON
+          <input type="file" accept=".csv,.json,text/csv,application/json" @change="selectPlotFile" />
+        </label>
+        <p>选择文件即表示它由你主动提供；系统只能记录来源为 user_uploaded，不能独立证明数据真实性。</p>
+        <button type="button" :disabled="loading || !selectedPlotFile" @click="uploadPlotDataset">上传并验证</button>
+      </section>
+
+      <section v-if="uploadReport" class="schema-report">
+        <header>
+          <div><h4>{{ uploadReport.original_filename }}</h4><p>{{ uploadReport.source_format }} · {{ uploadReport.row_count }} 行 · {{ uploadReport.byte_size }} bytes</p></div>
+          <strong>{{ uploadReport.valid ? 'Schema 可继续' : 'Schema 阻断' }}</strong>
+        </header>
+        <code>SHA-256 {{ uploadReport.data_sha256 }}</code>
+        <div class="schema-columns">
+          <article v-for="column in uploadReport.columns" :key="column.name">
+            <b>{{ column.name }}</b><span>{{ column.inferred_type }}</span>
+            <small>缺失 {{ column.missing_count }} / 非空 {{ column.non_missing_count }}</small>
+          </article>
+        </div>
+        <div v-if="uploadReport.issues.length" class="schema-issues">
+          <p v-for="item in uploadReport.issues" :key="`${item.code}:${item.field}`" :class="item.severity">
+            {{ item.severity }} · {{ item.field || 'dataset' }} · {{ item.message }}
+          </p>
+        </div>
+      </section>
+
+      <form v-if="uploadReport" class="plot-config" @submit.prevent="generatePlotCode">
+        <label>Figure ArtifactPlan
+          <select v-model="selectedArtifactPlanId" required>
+            <option value="" disabled>请选择</option>
+            <option v-for="artifact in figureArtifacts" :key="artifact.artifact_id" :value="artifact.artifact_id">
+              {{ artifact.artifact_id.split(':').at(-1) }} · {{ artifact.supports_claim_version_ids.length }} Claim
+            </option>
+          </select>
+        </label>
+        <label>图形<select v-model="plotKind"><option value="line">Line</option><option value="bar">Bar</option><option value="scatter">Scatter</option></select></label>
+        <label>X 字段<select v-model="plotXColumn" required><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }} · {{ column.inferred_type }}</option></select></label>
+        <label>Y 字段<select v-model="plotYColumn" required><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }} · {{ column.inferred_type }}</option></select></label>
+        <label>分组 / 图例字段<select v-model="plotHueColumn"><option value="">不分组</option><option v-for="column in uploadReport.columns" :key="column.name" :value="column.name">{{ column.name }}</option></select></label>
+        <label>图例标题<input v-model="plotLegendTitle" :required="Boolean(plotHueColumn)" :disabled="!plotHueColumn" /></label>
+        <label class="wide">标题<input v-model="plotTitle" required placeholder="论文图表标题，不包含结果断言" /></label>
+        <label>X 轴名称<input v-model="plotXLabel" required /></label><label>X 单位<input v-model="plotXUnit" required placeholder="unitless / not_applicable / 秒" /></label>
+        <label>Y 轴名称<input v-model="plotYLabel" required /></label><label>Y 单位<input v-model="plotYUnit" required placeholder="unitless / F1 / ms" /></label>
+        <label>聚合<select v-model="plotAggregation"><option value="none">不聚合</option><option value="mean">算术平均</option></select></label>
+        <label>误差线<select v-model="plotErrorBar"><option value="none">无</option><option value="standard_deviation" :disabled="plotAggregation !== 'mean'">样本标准差</option></select></label>
+        <label>Y 轴下界<input v-model="plotYAxisMin" type="number" step="any" placeholder="留空自动" /></label>
+        <fieldset>
+          <legend>导出格式</legend>
+          <label><input v-model="plotFormats" type="checkbox" value="png" /> PNG 300dpi</label>
+          <label><input v-model="plotFormats" type="checkbox" value="svg" /> SVG</label>
+          <label><input v-model="plotFormats" type="checkbox" value="pdf" /> PDF</label>
+        </fieldset>
+        <button class="generate-code" :disabled="loading">生成 Matplotlib 代码并检查</button>
+      </form>
+
+      <section v-if="plotDraft" class="plot-result">
+        <header>
+          <div><h4>图表草稿 {{ plotDraft.draft_id }}</h4><p>{{ plotDraft.code_generator_version }} · code SHA-256 {{ plotDraft.code_sha256 }}</p></div>
+          <strong :class="plotDraft.execution.status">{{ plotDraft.execution.status }}</strong>
+        </header>
+        <div class="plot-checks">
+          <article v-for="item in plotDraft.quality_report.checks" :key="item.check_type" :class="item.status">
+            <b>{{ item.status }} · {{ item.check_type }}</b><span>{{ item.message }}</span><small>{{ item.remediation }}</small>
+          </article>
+        </div>
+        <details><summary>查看生成的只读代码</summary><pre><code>{{ plotDraft.generated_code }}</code></pre></details>
+        <button type="button" :disabled="loading || plotDraft.quality_report.has_errors" @click="executePlotCode">
+          在受控进程中执行
+        </button>
+
+        <template v-if="plotDraft.execution.status === 'succeeded'">
+          <div class="execution-meta">
+            <span>Python {{ plotDraft.execution.library_versions?.python }}</span>
+            <span>Matplotlib {{ plotDraft.execution.library_versions?.matplotlib }}</span>
+            <span>逐点溯源已生成</span>
+          </div>
+          <img v-if="plotImageUrl" :src="plotImageUrl" alt="由用户上传数据成功执行生成的图表草稿" />
+          <div class="download-links">
+            <a v-for="filename in plotDraft.execution.generated_files" :key="filename" :href="plotFileUrl(filename)" download>{{ filename }}</a>
+            <a v-if="plotDraft.execution.traceability_file" :href="plotFileUrl(plotDraft.execution.traceability_file)" download>逐点溯源 JSON</a>
+            <a v-if="plotDraft.execution.download_bundle" :href="plotFileUrl(plotDraft.execution.download_bundle)" download>下载完整可复现包</a>
+          </div>
+        </template>
+        <p v-else-if="plotDraft.execution.status === 'failed'" class="execution-failure">
+          {{ plotDraft.execution.error_code }} · {{ plotDraft.execution.error_message }}；没有图片可展示。
+        </p>
+      </section>
+    </section>
   </section>
 </template>
 
@@ -739,7 +1037,8 @@ function addMetric(experiment: ExperimentPlan) {
 .claim-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 25px; }.claim-form textarea { resize: vertical; line-height: 1.5; }.existing-results { grid-column: 1 / -1; padding: 20px; border: 1px solid #526059; }.existing-results > header { display: flex; justify-content: space-between; align-items: center; }.existing-results h3, .existing-results p { margin: 3px 0; }.existing-results p { color: #abb6af; font-size: 12px; }.existing-results header button { border: 1px solid #dfff43; background: transparent; color: #dfff43; padding: 8px 10px; }.existing-results article { display: grid; grid-template-columns: 1fr 160px 2fr auto; gap: 8px; margin-top: 12px; }.existing-results article button { border: 1px solid #f56a3b; background: transparent; color: #f6a181; }.save-claim { grid-column: 1 / -1; min-height: 52px; }.claim-error, .claim-notice { margin-top: 18px; padding: 14px; }.claim-error { background: #7b2c22; }.claim-notice { background: #294c39; }
 .diagnosis { margin-top: 65px; }.diagnosis-header { display: flex; justify-content: space-between; gap: 20px; align-items: end; border-bottom: 2px solid #dfff43; padding-bottom: 18px; }.diagnosis-header h3 { margin: 8px 0 0; font-size: 32px; }.diagnosis-header > div:last-child { display: flex; flex-wrap: wrap; gap: 6px; }.diagnosis-header span, .assessment-boundary span { padding: 6px 8px; border: 1px solid #68766e; color: #c5cec9; font-size: 10px; }.assessment-boundary { display: flex; gap: 8px; margin: 15px 0 25px; }.requirement-list { display: grid; gap: 20px; }.requirement-list > article { padding: 24px; border: 1px solid #526059; background: #1e2a24; }.requirement-list > article > header { display: grid; grid-template-columns: 55px 1fr 170px; gap: 12px; align-items: center; margin-bottom: 20px; }.requirement-list > article > header > span { color: #dfff43; font-size: 28px; }.requirement-list > article > header div { display: grid; gap: 4px; }.requirement-list > article > header b { font-size: 22px; }.requirement-list > article > header small { color: #859188; }.requirement-list > article > label { margin-top: 12px; }.requirement-list textarea[readonly] { background: #dfe1d7; }.variable-grid, .proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }.proof-grid { grid-template-columns: 1fr 1fr; }.artifact-editor { display: grid; grid-template-columns: 180px 1fr 2fr; gap: 10px; margin-top: 12px; }.save-diagnosis { width: 100%; margin-top: 22px; min-height: 50px; }
 .experiment-planning { margin-top: 95px; padding-top: 55px; border-top: 1px solid #526059; }.plan-heading { display: grid; grid-template-columns: 1fr minmax(280px, 420px); gap: 30px; align-items: end; }.plan-heading h3, .artifact-plans > header h3 { margin: 8px 0; font-size: 34px; }.plan-heading p { color: #abb6af; line-height: 1.6; }.claim-selector { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 16px; border: 1px solid #526059; }.claim-selector label { display: flex; gap: 7px; align-items: center; font-size: 12px; }.claim-selector button { grid-column: 1 / -1; padding: 11px; border: 1px solid #dfff43; background: #dfff43; font-weight: 800; }.plan-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 22px 0; }.plan-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #c5cec9; font-size: 10px; }.quality-report { padding: 20px; border: 1px solid #68766e; background: #111a16; }.quality-report > header { display: flex; justify-content: space-between; align-items: center; }.quality-report h4, .quality-report p { margin: 3px 0; }.quality-report header p { color: #859188; font-size: 11px; }.quality-report strong { color: #dfff43; }.quality-report strong.danger { color: #ff9b76; }.quality-report article { display: grid; grid-template-columns: 210px 1fr; gap: 6px 15px; margin-top: 10px; padding: 11px; border-left: 4px solid #eccb53; background: #22271d; }.quality-report article.error { border-color: #f56a3b; }.quality-report article small { grid-column: 2; color: #abb6af; }.quality-pass { color: #bfe888; }.experiment-list { display: grid; gap: 24px; margin-top: 25px; }.experiment-list > article { padding: 26px; border: 1px solid #526059; background: #1b2721; }.experiment-list > article > header, .plan-subsection > header, .artifact-plans article > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }.experiment-list > article > header div { display: flex; align-items: center; gap: 13px; }.experiment-list > article > header span { color: #dfff43; font-size: 26px; }.experiment-list h4 { margin: 0; text-transform: uppercase; }.experiment-list select, .experiment-list input, .experiment-list textarea, .artifact-plans select, .artifact-plans input, .artifact-plans textarea { min-width: 0; padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; font: inherit; }.source-text { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }.source-text label, .plan-subsection label, .plan-variables label, .artifact-plan-grid label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.source-text textarea { background: #dfe1d7; }.plan-subsection { margin-top: 18px; padding-top: 15px; border-top: 1px dotted #68766e; }.plan-subsection h5 { margin: 0 0 10px; color: #dfff43; letter-spacing: 1px; }.plan-subsection header button { border: 1px solid #dfff43; background: transparent; color: #dfff43; padding: 7px 9px; }.dataset-grid, .controls-grid, .artifact-plan-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }.wide { grid-column: 1 / -1; }.baseline-grid { display: grid; grid-template-columns: 1fr 1fr 140px; gap: 9px; margin-top: 9px; }.baseline-grid button, .metric-grid button { border: 1px solid #f56a3b; background: transparent; color: #f6a181; }.metric-grid { display: grid; grid-template-columns: 1fr 190px 200px auto; gap: 8px; margin-top: 8px; }.plan-variables { margin-top: 18px; }.boundary-editor .proof-grid { margin-top: 0; }.link-note { margin: 14px 0 0; color: #859188; font-size: 10px; overflow-wrap: anywhere; }.artifact-plans { margin-top: 55px; }.artifact-plans > article { margin-top: 14px; padding: 22px; border: 1px solid #526059; }.artifact-plan-grid { margin-top: 14px; }.save-plan { background: #f56a3b; border-color: #f56a3b; color: #fff; }
+.plot-draft-workspace { margin-top: 95px; padding-top: 55px; border-top: 2px solid #f56a3b; }.plot-heading { display: flex; justify-content: space-between; gap: 28px; align-items: end; }.plot-heading h3 { margin: 8px 0; font-size: 36px; }.plot-heading p { color: #abb6af; line-height: 1.6; }.plot-policy { display: flex; flex-wrap: wrap; gap: 6px; }.plot-policy span, .execution-meta span { padding: 7px 9px; border: 1px solid #68766e; color: #dfff43; font-size: 10px; }.upload-panel { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr auto; gap: 14px; align-items: end; margin-top: 25px; padding: 20px; border: 1px solid #68766e; background: #1b2721; }.upload-panel label, .plot-config label { display: grid; gap: 6px; color: #c5cec9; font-size: 11px; font-weight: 800; }.upload-panel p { margin: 0; color: #abb6af; font-size: 12px; }.upload-panel input, .plot-config input, .plot-config select { padding: 10px; border: 1px solid #68766e; background: #f7f4ec; color: #17211d; }.upload-panel button, .plot-config button, .plot-result > button { padding: 11px 14px; border: 1px solid #dfff43; background: #dfff43; color: #17211d; font-weight: 800; }.schema-report, .plot-result { margin-top: 18px; padding: 22px; border: 1px solid #526059; background: #111a16; }.schema-report > header, .plot-result > header { display: flex; justify-content: space-between; align-items: center; gap: 16px; }.schema-report h4, .schema-report p, .plot-result h4, .plot-result p { margin: 3px 0; }.schema-report header p, .plot-result header p { color: #859188; font-size: 11px; overflow-wrap: anywhere; }.schema-report code { display: block; margin: 12px 0; color: #dfff43; overflow-wrap: anywhere; }.schema-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }.schema-columns article { display: grid; gap: 4px; padding: 12px; background: #1e2a24; }.schema-columns span, .schema-columns small { color: #abb6af; }.schema-issues p { padding: 8px; border-left: 3px solid #eccb53; background: #22271d; }.schema-issues p.error { border-color: #f56a3b; }.plot-config { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; margin-top: 18px; padding: 22px; border: 1px solid #68766e; }.plot-config fieldset { display: flex; gap: 12px; align-items: center; border: 1px solid #68766e; }.plot-config fieldset label { display: flex; align-items: center; }.plot-config .generate-code { grid-column: 1 / -1; }.plot-checks { display: grid; gap: 7px; margin: 18px 0; }.plot-checks article { display: grid; grid-template-columns: 210px 1fr; gap: 5px 12px; padding: 10px; border-left: 4px solid #75a986; background: #1e2a24; }.plot-checks article.warning { border-color: #eccb53; }.plot-checks article.error { border-color: #f56a3b; }.plot-checks small { grid-column: 2; color: #abb6af; }.plot-result details { margin: 16px 0; }.plot-result pre { max-height: 420px; overflow: auto; padding: 16px; background: #050806; color: #d5eadb; }.plot-result > button:disabled { opacity: .45; }.plot-result img { display: block; max-width: min(100%, 1000px); margin: 22px auto; padding: 10px; background: white; }.execution-meta, .download-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }.download-links a { padding: 10px 12px; border: 1px solid #dfff43; color: #dfff43; text-decoration: none; }.execution-failure { padding: 12px; background: #7b2c22; color: white; }
 @media (max-width: 900px) { .claim-heading, .diagnosis-header { display: block; }.claim-heading button { margin-top: 12px; }.claim-form, .variable-grid, .artifact-editor { grid-template-columns: 1fr; }.existing-results article { grid-template-columns: 1fr; }.diagnosis-header > div:last-child { margin-top: 12px; } }
-@media (max-width: 900px) { .plan-heading, .source-text, .dataset-grid, .controls-grid, .artifact-plan-grid { grid-template-columns: 1fr; }.baseline-grid, .metric-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.quality-report article { grid-template-columns: 1fr; }.quality-report article small { grid-column: 1; } }
+@media (max-width: 900px) { .plan-heading, .source-text, .dataset-grid, .controls-grid, .artifact-plan-grid, .plot-config { grid-template-columns: 1fr; }.plot-heading, .upload-panel { display: grid; grid-template-columns: 1fr; }.baseline-grid, .metric-grid { grid-template-columns: 1fr; }.wide { grid-column: auto; }.quality-report article, .plot-checks article { grid-template-columns: 1fr; }.quality-report article small, .plot-checks small { grid-column: 1; } }
 @media (max-width: 640px) { .claim-workspace { padding: 55px 20px; }.project-toolbar, .proof-grid { grid-template-columns: 1fr; }.requirement-list > article, .experiment-list > article { padding: 17px; }.requirement-list > article > header { grid-template-columns: 45px 1fr; }.requirement-list > article > header select { grid-column: 2; }.assessment-boundary { display: grid; }.claim-selector { grid-template-columns: 1fr; }.quality-report > header { display: block; } }
 </style>
