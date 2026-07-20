@@ -125,6 +125,52 @@ type OpportunityResponse = {
   }[]
   candidates: Candidate[]
 }
+type PlannedExperiment = {
+  experiment_id: string
+  experiment_type: string
+  title: string
+  validation_goal: string
+  design: string
+  independent_variables: string[]
+  dependent_variables: string[]
+  controlled_variables: string[]
+  required_inputs: string[]
+  output_fields: string[]
+  falsification_criteria: string[]
+  interpretation_boundary: string[]
+  rationale: {
+    inference_type: 'system_planning_inference'
+    evidence_references: {
+      paper_id: string
+      evidence_anchor_id: string
+      relation: string
+    }[]
+    explanation: string
+  }
+}
+type PlannedArtifact = {
+  artifact_id: string
+  artifact_type: string
+  title: string
+  validation_goal: string
+  source_experiment_ids: string[]
+  variables: string[]
+  output_fields: string[]
+  recommended_encoding: string
+  evidence_boundary: string[]
+}
+type CoachResponse = {
+  status: 'ready_for_review' | 'insufficient_evidence'
+  message: string
+  plan: null | {
+    plan_id: string
+    source_candidate_id: string
+    experiments: PlannedExperiment[]
+    artifacts: PlannedArtifact[]
+    open_decisions: string[]
+    global_boundaries: string[]
+  }
+}
 
 const searchQuery = ref('time series anomaly detection')
 const opportunityQuery = ref('time series anomaly detection')
@@ -135,8 +181,18 @@ const paper = ref<Paper | null>(null)
 const structure = ref<DocumentStructure | null>(null)
 const selectedEvidence = ref<Evidence | null>(null)
 const opportunity = ref<OpportunityResponse | null>(null)
+const lastOpportunityRequest = ref<Record<string, string | number>>({
+  query: opportunityQuery.value,
+  minimum_evidence_papers: 2,
+})
+const selectedCandidate = ref<Candidate | null>(null)
+const researchQuestion = ref('')
+const hypothesis = ref('')
+const proposedMethod = ref('')
+const coachResponse = ref<CoachResponse | null>(null)
 const loadingSearch = ref(false)
 const loadingOpportunity = ref(false)
+const loadingPlan = ref(false)
 const error = ref('')
 
 const evidenceMap = computed(
@@ -196,6 +252,7 @@ async function analyzeOpportunities() {
     if (typeof yearTo.value === 'number' && Number.isFinite(yearTo.value)) {
       payload.year_to = yearTo.value
     }
+    lastOpportunityRequest.value = payload
     const response = await fetch('/api/v1/research/opportunities', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -203,10 +260,53 @@ async function analyzeOpportunities() {
     })
     if (!response.ok) throw new Error('研究机会分析请求无效或暂时不可用。')
     opportunity.value = await response.json()
+    selectedCandidate.value = null
+    coachResponse.value = null
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '未知错误'
   } finally {
     loadingOpportunity.value = false
+  }
+}
+
+function selectCandidateForPlan(candidate: Candidate) {
+  selectedCandidate.value = candidate
+  coachResponse.value = null
+  window.setTimeout(() => {
+    document.querySelector('#research-coach')?.scrollIntoView({ behavior: 'smooth' })
+  }, 0)
+}
+
+async function createExperimentPlan() {
+  if (!selectedCandidate.value) return
+  loadingPlan.value = true
+  error.value = ''
+  try {
+    const response = await fetch('/api/v1/research/experiment-plans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        opportunity: lastOpportunityRequest.value,
+        candidate_id: selectedCandidate.value.candidate_id,
+        project_claim: {
+          research_question: researchQuestion.value,
+          hypothesis: hypothesis.value,
+          proposed_method: proposedMethod.value,
+        },
+      }),
+    })
+    if (!response.ok) {
+      throw new Error(
+        response.status === 404
+          ? '该候选已不在当前查询范围，请重新运行研究机会分析。'
+          : '研究教练请求无效或暂时不可用。',
+      )
+    }
+    coachResponse.value = await response.json()
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '未知错误'
+  } finally {
+    loadingPlan.value = false
   }
 }
 
@@ -392,9 +492,96 @@ onMounted(async () => {
                   <section><h5>适用条件</h5><ul><li v-for="item in candidate.applicable_conditions" :key="item">{{ item }}</li></ul></section>
                   <section><h5>不能得出的结论</h5><ul><li v-for="item in candidate.prohibited_conclusions" :key="item">{{ item }}</li></ul></section>
                 </div>
+                <button class="coach-start" @click="selectCandidateForPlan(candidate)">
+                  用这个候选制定可证伪实验与图表计划 →
+                </button>
               </article>
             </div>
             <p v-else class="empty-candidates">当前没有满足至少两篇已审核、已核验证据论文覆盖的候选。</p>
+          </section>
+
+          <section v-if="selectedCandidate" id="research-coach" class="coach-section">
+            <p class="eyebrow">RESEARCH COACH</p>
+            <h3>从用户假设反推实验与图表</h3>
+            <p class="coach-boundary">
+              研究问题、假设和拟议方法由你提供，系统不会补成论文事实；输出只是一份待执行、待复核的计划。
+            </p>
+            <div class="selected-candidate">
+              <span>{{ selectedCandidate.candidate_type }}</span>
+              <b>{{ selectedCandidate.problem_description }}</b>
+            </div>
+            <form class="coach-form" @submit.prevent="createExperimentPlan">
+              <label>
+                研究问题
+                <textarea v-model="researchQuestion" required minlength="10" rows="3" placeholder="你希望回答的可检验问题"></textarea>
+              </label>
+              <label>
+                可证伪假设
+                <textarea v-model="hypothesis" required minlength="10" rows="4" placeholder="写明什么观察会支持或反驳该假设"></textarea>
+              </label>
+              <label>
+                拟议方法
+                <textarea v-model="proposedMethod" required minlength="2" rows="3" placeholder="只描述你的方法，不填入未经实验的效果"></textarea>
+              </label>
+              <button :disabled="loadingPlan">
+                {{ loadingPlan ? '生成计划中' : '生成证据约束计划' }}
+              </button>
+            </form>
+
+            <div v-if="coachResponse" class="coach-result" :class="coachResponse.status">
+              <header><span>{{ coachResponse.status }}</span><p>{{ coachResponse.message }}</p></header>
+              <template v-if="coachResponse.plan">
+                <div class="plan-identity">
+                  <b>{{ coachResponse.plan.plan_id }}</b>
+                  <span>来源候选 {{ coachResponse.plan.source_candidate_id }}</span>
+                </div>
+                <section class="experiment-plan-list">
+                  <article v-for="experiment in coachResponse.plan.experiments" :key="experiment.experiment_id">
+                    <header><span>{{ experiment.experiment_type }}</span><b>{{ experiment.experiment_id }}</b></header>
+                    <h4>{{ experiment.title }}</h4>
+                    <p><strong>验证目标：</strong>{{ experiment.validation_goal }}</p>
+                    <p><strong>设计：</strong>{{ experiment.design }}</p>
+                    <div class="experiment-fields">
+                      <section><h5>自变量</h5><ul><li v-for="item in experiment.independent_variables" :key="item">{{ item }}</li></ul></section>
+                      <section><h5>因变量</h5><ul><li v-for="item in experiment.dependent_variables" :key="item">{{ item }}</li></ul></section>
+                      <section><h5>控制变量</h5><ul><li v-for="item in experiment.controlled_variables" :key="item">{{ item }}</li></ul></section>
+                      <section><h5>输出字段</h5><ul><li v-for="item in experiment.output_fields" :key="item">{{ item }}</li></ul></section>
+                    </div>
+                    <div class="experiment-boundaries">
+                      <section><h5>可反驳条件</h5><ul><li v-for="item in experiment.falsification_criteria" :key="item">{{ item }}</li></ul></section>
+                      <section><h5>解释边界</h5><ul><li v-for="item in experiment.interpretation_boundary" :key="item">{{ item }}</li></ul></section>
+                    </div>
+                    <details>
+                      <summary>规划推断与证据引用</summary>
+                      <p>{{ experiment.rationale.explanation }}</p>
+                      <ul><li v-for="item in experiment.rationale.evidence_references" :key="`${item.paper_id}-${item.evidence_anchor_id}-${item.relation}`">{{ item.paper_id }} · {{ item.evidence_anchor_id }} · {{ item.relation }}</li></ul>
+                    </details>
+                  </article>
+                </section>
+
+                <section class="artifact-plan-grid">
+                  <article v-for="artifact in coachResponse.plan.artifacts" :key="artifact.artifact_id">
+                    <span>{{ artifact.artifact_type }}</span>
+                    <h4>{{ artifact.title }}</h4>
+                    <p><strong>验证目标：</strong>{{ artifact.validation_goal }}</p>
+                    <b>来源实验：{{ artifact.source_experiment_ids.join(', ') }}</b>
+                    <h5>变量</h5>
+                    <p>{{ artifact.variables.join(' · ') }}</p>
+                    <h5>输出字段</h5>
+                    <p>{{ artifact.output_fields.join(' · ') }}</p>
+                    <h5>表达建议</h5>
+                    <p>{{ artifact.recommended_encoding }}</p>
+                    <h5>证据边界</h5>
+                    <ul><li v-for="item in artifact.evidence_boundary" :key="item">{{ item }}</li></ul>
+                  </article>
+                </section>
+
+                <div class="plan-checklist">
+                  <section><h4>执行前待决定</h4><ul><li v-for="item in coachResponse.plan.open_decisions" :key="item">{{ item }}</li></ul></section>
+                  <section><h4>全局证据边界</h4><ul><li v-for="item in coachResponse.plan.global_boundaries" :key="item">{{ item }}</li></ul></section>
+                </div>
+              </template>
+            </div>
           </section>
         </template>
       </section>

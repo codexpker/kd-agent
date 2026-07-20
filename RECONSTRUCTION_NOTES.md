@@ -38,5 +38,6 @@
 - 已实现基于本地已检索论文和版本化结构规则的 Research Opportunity Candidate API。规则覆盖八类研究缺口，每项输出支持/冲突证据及完整EvidenceAnchor、不同论文覆盖、检索年份范围、可复算置信度依据、人工确认事项、适用条件和禁止结论。
 - 查询计划显式报告纳入/排除规则、逐论文决定与可能遗漏；只有`double_annotated/frozen`且引用已核验EvidenceAnchor的论文可以参与。未达到最少不同论文覆盖时返回`insufficient_evidence`，不会用合成记录或排队论文补足。
 - Vue工作台展示证据列表与线性研究进展时间线，不使用知识图谱大球。八类规则正向路径目前只由明确标记的`synthetic-opportunity-fixture`测试验证；真实离线清单当前为5篇注册、0篇纳入，因此没有真实候选或真实研究机会成绩。
+- 已建立候选驱动的研究教练框架：用户自行提交研究问题、可证伪假设和拟议方法，服务端重新校验候选仍属于当前证据查询，再生成主实验、基线、消融、敏感性、鲁棒性、失败案例及闭合图表计划。所有规划项标记为`system_planning_inference`并回链EvidenceAnchor，只定义变量、输出Schema、反驳条件和证据边界，不生成实验数据或结果。当前真实语料仍会在候选门禁处返回`insufficient_evidence`；正向路径仅由合成fixture验证，尚无真实研究教练质量成绩。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

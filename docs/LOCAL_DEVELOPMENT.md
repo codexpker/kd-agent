@@ -311,6 +311,36 @@ curl -X POST http://127.0.0.1:8000/api/v1/research/opportunities \
 前端在`http://127.0.0.1:5173/#opportunities`展示同一查询计划、证据列表和时间线，不绘制知识
 图谱大球。
 
+### 研究假设到实验/图表计划
+
+先从研究机会响应中选择一个`candidate_id`，再提交用户自己的Project Claim：
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/research/experiment-plans \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "opportunity":{"query":"time series anomaly detection","minimum_evidence_papers":2},
+    "candidate_id":"<candidate_id_from_previous_response>",
+    "project_claim":{
+      "research_question":"Does the proposed detector remain reliable under a controlled shift?",
+      "hypothesis":"The proposed method degrades more slowly than comparable baselines as shift severity increases.",
+      "proposed_method":"A user-defined association-aware detector"
+    }
+  }'
+```
+
+Project Claim固定标记`origin=user_supplied`。服务端重新执行同一研究机会查询，不能用客户端伪造
+或已离开查询范围的候选；没有合格候选时返回`insufficient_evidence`且`plan=null`，候选ID不属于
+当前查询时返回404。
+
+成功计划包含主实验、基线覆盖、消融、敏感性、鲁棒性和失败案例分析，以及与实验ID闭合的六类
+图表。实验记录验证目标、变量、控制条件、所需输入、输出Schema、反驳条件和解释边界；图表记录
+变量、输出字段、表达建议和证据边界。每项规划推断均引用候选的EvidenceAnchor快照，并明确标记
+`system_planning_inference`。接口只生成计划Schema，不生成实验数据、图表数值或结果结论。
+
+当前真实离线语料仍没有合格候选，因此本接口默认展示证据不足门禁。正向计划只在
+`synthetic-opportunity-fixture`测试中验证契约和关系闭合，不是实际研究建议质量成绩。
+
 ## 安全
 
 - 后端持有外部服务密钥，前端不保存密钥。

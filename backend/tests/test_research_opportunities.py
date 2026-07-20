@@ -1,11 +1,19 @@
 from collections.abc import Iterable
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.main import app
 from app.models import Claim, EvidenceAnchor, PaperDeconstruction
 from app.research_models import ResearchOpportunityRequest
+from app.research_planning_models import (
+    ProjectClaim,
+    ResearchCoachResponse,
+    ResearchPlanRequest,
+)
 from app.services.research_opportunities import ResearchOpportunityService
+from app.services.research_planning import ResearchPlanningService
 
 
 client = TestClient(app)
@@ -232,3 +240,171 @@ def test_api_rejects_invalid_request_ranges_and_thresholds() -> None:
 
     assert reversed_years.status_code == 422
     assert invalid_threshold.status_code == 422
+
+
+def _project_claim() -> ProjectClaim:
+    return ProjectClaim(
+        research_question=(
+            "Does the proposed detector remain reliable under controlled domain shift?"
+        ),
+        hypothesis=(
+            "The proposed method retains more detection quality than comparable baselines "
+            "as the predeclared shift severity increases."
+        ),
+        proposed_method="A user-defined association-aware detector",
+    )
+
+
+def test_current_offline_corpus_blocks_experiment_plan_generation() -> None:
+    response = client.post(
+        "/api/v1/research/experiment-plans",
+        json={
+            "opportunity": {"query": "time series anomaly detection"},
+            "candidate_id": "roc-not-available",
+            "project_claim": _project_claim().model_dump(),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "insufficient_evidence"
+    assert payload["candidate"] is None
+    assert payload["plan"] is None
+    assert payload["project_claim"]["origin"] == "user_supplied"
+
+
+def test_synthetic_candidate_generates_closed_experiment_and_artifact_plan() -> None:
+    corpus = _synthetic_corpus()
+    opportunity_request = ResearchOpportunityRequest(
+        query="time series anomaly detection"
+    )
+    opportunity = ResearchOpportunityService(corpus).analyze(opportunity_request)
+    candidate = next(
+        item
+        for item in opportunity.candidates
+        if item.candidate_type == "shared_unresolved_limitation"
+    )
+    response = ResearchPlanningService(corpus).create(
+        ResearchPlanRequest(
+            opportunity=opportunity_request,
+            candidate_id=candidate.candidate_id,
+            project_claim=_project_claim(),
+        )
+    )
+
+    assert response.status == "ready_for_review"
+    assert response.plan is not None
+    assert response.plan.project_claim == _project_claim()
+    assert _project_claim().hypothesis in response.plan.experiments[0].validation_goal
+    assert {item.experiment_type for item in response.plan.experiments} == {
+        "main_comparison",
+        "baseline_coverage",
+        "ablation",
+        "sensitivity",
+        "robustness",
+        "failure_case_analysis",
+    }
+    assert {item.artifact_type for item in response.plan.artifacts} == {
+        "result_table",
+        "ablation_table",
+        "sensitivity_curve",
+        "robustness_plot",
+        "failure_case_panel",
+        "tradeoff_plot",
+    }
+    experiment_ids = {
+        item.experiment_id for item in response.plan.experiments
+    }
+    assert all(
+        set(item.source_experiment_ids) <= experiment_ids
+        for item in response.plan.artifacts
+    )
+    assert all(
+        item.validation_goal
+        and item.variables
+        and item.output_fields
+        and item.evidence_boundary
+        for item in response.plan.artifacts
+    )
+    snapshot_ids = {
+        (item.paper_id, item.evidence_anchor.id)
+        for item in response.plan.evidence_snapshot
+    }
+    assert snapshot_ids
+    assert all(
+        (reference.paper_id, reference.evidence_anchor_id) in snapshot_ids
+        for experiment in response.plan.experiments
+        for reference in experiment.rationale.evidence_references
+    )
+    assert all(
+        experiment.rationale.inference_type == "system_planning_inference"
+        for experiment in response.plan.experiments
+    )
+    assert "contains no experimental results" in response.message
+
+    invalid_payload = response.model_dump()
+    invalid_payload["plan"]["source_candidate_id"] = "roc-unrelated"
+    with pytest.raises(ValidationError, match="source candidate"):
+        ResearchCoachResponse.model_validate(invalid_payload)
+
+
+def test_experiment_plan_api_rejects_candidate_outside_current_query(
+    monkeypatch,
+) -> None:
+    corpus = _synthetic_corpus()
+    monkeypatch.setattr("app.api.get_gold_dataset", lambda: corpus)
+
+    response = client.post(
+        "/api/v1/research/experiment-plans",
+        json={
+            "opportunity": {"query": "time series anomaly detection"},
+            "candidate_id": "roc-does-not-exist",
+            "project_claim": _project_claim().model_dump(),
+        },
+    )
+
+    assert response.status_code == 404
+    assert "not available" in response.json()["detail"]
+
+
+def test_experiment_plan_api_returns_synthetic_positive_path(monkeypatch) -> None:
+    corpus = _synthetic_corpus()
+    opportunity_request = ResearchOpportunityRequest(
+        query="time series anomaly detection"
+    )
+    candidate = ResearchOpportunityService(corpus).analyze(
+        opportunity_request
+    ).candidates[0]
+    monkeypatch.setattr("app.api.get_gold_dataset", lambda: corpus)
+
+    response = client.post(
+        "/api/v1/research/experiment-plans",
+        json={
+            "opportunity": opportunity_request.model_dump(),
+            "candidate_id": candidate.candidate_id,
+            "project_claim": _project_claim().model_dump(),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ready_for_review"
+    assert payload["plan"]["source_candidate_id"] == candidate.candidate_id
+    assert payload["plan"]["project_claim"]["origin"] == "user_supplied"
+
+
+def test_experiment_plan_api_rejects_underspecified_project_claim() -> None:
+    response = client.post(
+        "/api/v1/research/experiment-plans",
+        json={
+            "opportunity": {"query": "time series anomaly detection"},
+            "candidate_id": "roc-anything",
+            "project_claim": {
+                "research_question": "too short",
+                "hypothesis": "too short",
+                "proposed_method": "x",
+            },
+        },
+    )
+
+    assert response.status_code == 422
