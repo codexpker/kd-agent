@@ -66,7 +66,7 @@ def _prepare(
     )
 
 
-def test_pending_anomaly_manifest_records_both_real_blockers() -> None:
+def test_pending_anomaly_manifest_records_confirmed_private_copy_without_fake_annotator() -> None:
     fixture_root = files("app.data").joinpath("evaluation")
     manifest = LayoutGoldCaseManifest.model_validate_json(
         fixture_root.joinpath(
@@ -75,15 +75,16 @@ def test_pending_anomaly_manifest_records_both_real_blockers() -> None:
     )
 
     assert manifest.workflow_status == "blocked"
-    assert manifest.rights_status == "needs_authorized_pdf"
-    assert manifest.annotation_status == "needs_second_annotator"
-    assert manifest.source is None
-    assert all(
-        item.status == "blocked_missing_authorized_pdf"
-        for item in manifest.parser_candidates
-    )
+    assert manifest.rights_status == "confirmed"
+    assert manifest.annotation_status == "annotation_not_started"
+    assert manifest.source is not None
+    assert manifest.source.rights_basis == "user_private_copy"
+    assert manifest.source.file_sha256 == "ff8d3bb627fce9914eb8a9e78c4139e4852771dbee801da2c766dea028a17053"
+    assert manifest.annotator_a_id is None
+    assert manifest.parser_candidates[0].status == "persisted_not_exported"
+    assert all(item.relative_path is None for item in manifest.parser_candidates)
     assert not any("frozen" in item.casefold() for item in manifest.blockers)
-    assert any("rights basis" in item for item in manifest.blockers)
+    assert any("Human layout annotation is postponed" in item for item in manifest.blockers)
 
 
 def test_case_manifest_rejects_contradictory_annotation_state(

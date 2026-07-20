@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -52,6 +53,12 @@ def _right_from_args(args: argparse.Namespace) -> PersistenceRight | None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        try:
+            reconfigure(encoding="utf-8")
+        except (AttributeError, OSError):
+            pass
     args = parse_args(argv)
     service = PdfLayoutService()
     try:

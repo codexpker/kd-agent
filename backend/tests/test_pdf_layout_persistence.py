@@ -495,3 +495,79 @@ def test_document_structure_api_falls_back_to_fact_free_gold_snapshot(
     assert all(item["page"] is None for item in payload["artifacts"])
     assert all(item["bbox"] is None for item in payload["artifacts"])
     assert all(item["caption"] is None for item in payload["artifacts"])
+
+
+def test_private_pdf_preview_api_is_local_hash_bound_and_never_returns_raw_pdf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fitz = pytest.importorskip("fitz")
+    pdf_path = tmp_path / "private-copy.pdf"
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Table 1: private preview fixture")
+    document.save(pdf_path)
+    document.close()
+    digest = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+    structure = DocumentStructure(
+        paper_id="paper-1",
+        source="parsed_pdf",
+        parser_name="pymupdf",
+        parser_version="test",
+        file_sha256=digest,
+        page_count=1,
+        sections=[],
+        artifacts=[
+            DocumentArtifact(
+                id="art-1",
+                artifact_type="table",
+                label="Table 1",
+                caption="private preview fixture",
+                page=1,
+                bbox=[65.0, 50.0, 310.0, 90.0],
+            )
+        ],
+        references=[],
+    )
+    monkeypatch.setattr(api_module, "document_structure", lambda _: structure)
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            private_pdf_preview_enabled=True,
+            private_pdf_preview_root=str(tmp_path),
+            research_gateway_mode="local",
+        ),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/papers/paper-1/document-preview/artifacts/art-1"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-kd-preview"] == "local-private-copy"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert not response.content.startswith(b"%PDF")
+
+
+def test_private_pdf_preview_api_is_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            private_pdf_preview_enabled=False,
+            private_pdf_preview_root="",
+            research_gateway_mode="local",
+        ),
+    )
+
+    response = TestClient(app).get(
+        "/api/v1/papers/paper-1/document-preview/pages/1"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Private PDF preview is disabled"

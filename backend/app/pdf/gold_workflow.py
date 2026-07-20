@@ -16,6 +16,7 @@ from app.pdf.service import PdfLayoutService
 
 RightsStatus = Literal["needs_authorized_pdf", "confirmed"]
 AnnotationWorkflowStatus = Literal[
+    "annotation_not_started",
     "needs_second_annotator",
     "independent_annotation_pending",
     "needs_adjudication",
@@ -27,6 +28,7 @@ CaseWorkflowStatus = Literal[
 CandidateStatus = Literal[
     "blocked_missing_authorized_pdf",
     "pending_external_parser",
+    "persisted_not_exported",
     "available",
     "unavailable",
     "error",
@@ -73,6 +75,11 @@ class ParserCandidateRecord(BaseModel):
                 self.relative_path
             ).parts:
                 raise ValueError("candidate path must remain relative to its case")
+        elif self.status == "persisted_not_exported":
+            if not self.parser_version or self.relative_path is not None or self.error:
+                raise ValueError(
+                    "persisted_not_exported requires a parser version and no case file"
+                )
         elif self.relative_path is not None:
             raise ValueError("unavailable candidate must not claim an output path")
         return self
@@ -111,7 +118,15 @@ class LayoutGoldCaseManifest(BaseModel):
         elif self.source is None:
             raise ValueError("confirmed rights require recorded PDF source provenance")
         elif self.annotator_a_id is None:
-            raise ValueError("authorized annotation case requires annotator A")
+            if (
+                self.annotation_status != "annotation_not_started"
+                or self.workflow_status != "blocked"
+                or self.annotator_b_id is not None
+                or self.adjudicator_id is not None
+            ):
+                raise ValueError(
+                    "authorized case without annotator A must remain annotation_not_started"
+                )
         identities = [
             item
             for item in (
@@ -123,7 +138,11 @@ class LayoutGoldCaseManifest(BaseModel):
         ]
         if len(identities) != len(set(identities)):
             raise ValueError("annotators and adjudicator must be distinct people")
-        if self.annotator_b_id is None:
+        if self.annotator_a_id is None:
+            pass
+        elif self.annotation_status == "annotation_not_started":
+            raise ValueError("case with annotator A cannot remain annotation_not_started")
+        elif self.annotator_b_id is None:
             if self.annotation_status != "needs_second_annotator":
                 raise ValueError(
                     "case without annotator B must stay needs_second_annotator"

@@ -14,9 +14,9 @@ type Paper = {
   paper_id: string
   title: string
   status: string
-  claims: { id: string; statement: string; evidence_ids: string[] }[]
-  experiment_intents: { id: string; title: string; evidence_ids: string[] }[]
-  artifacts: { id: string; label: string; role: string; evidence_ids: string[] }[]
+  claims: { id: string; claim_type: string; statement: string; evidence_ids: string[] }[]
+  experiment_intents: { id: string; title: string; supports_claim_ids: string[]; evidence_ids: string[] }[]
+  artifacts: { id: string; label: string; role: string; supports_claim_ids: string[]; evidence_ids: string[] }[]
   evidence: Evidence[]
 }
 type GraphNode = {
@@ -90,6 +90,7 @@ const graph = ref<EvidenceGraph | null>(null)
 const assistantSession = ref<AssistantSession | null>(null)
 const latestToolRuns = ref<AssistantToolRun[]>([])
 const selectedNode = ref<GraphNode | null>(null)
+const focusedClaimId = ref<string | null>(null)
 const sidePanel = ref<'evidence' | 'graph'>(route.query.panel === 'graph' ? 'graph' : 'evidence')
 const activeTask = ref('等待任务')
 const taskSteps = ref<TaskStep[]>([])
@@ -131,31 +132,31 @@ const assistantRuntimeDescription = computed(() => {
   return '当前会话由星辰工作流组织语言；事实仍必须引用本地 EvidenceAnchor。'
 })
 
-const graphLayout = computed(() => {
-  if (!graph.value) return { nodes: [], edges: [], height: 480 }
-  const visible = graph.value.nodes.filter((item) => item.node_type !== 'narrative_move')
-  const groups = {
-    paper: visible.filter((item) => item.node_type === 'paper'),
-    claim: visible.filter((item) => item.node_type === 'claim'),
-    work: visible.filter((item) => ['experiment', 'artifact'].includes(item.node_type)),
-    evidence: visible.filter((item) => item.node_type === 'evidence'),
-  }
-  const height = Math.max(520, groups.evidence.length * 55 + 60, groups.work.length * 63 + 60)
-  const positions = new Map<string, { node: GraphNode; x: number; y: number }>()
-  const place = (items: GraphNode[], x: number, gap: number) => {
-    const start = Math.max(42, (height - Math.max(0, items.length - 1) * gap) / 2)
-    items.forEach((node, index) => positions.set(node.node_id, { node, x, y: start + index * gap }))
-  }
-  place(groups.paper, 74, 60)
-  place(groups.claim, 245, 92)
-  place(groups.work, 465, 63)
-  place(groups.evidence, 720, 55)
+const focusedGraph = computed(() => {
+  if (!graph.value) return { claim: null, paths: [], directEvidence: [] }
+  const claim = graph.value.nodes.find((item) => item.node_type === 'claim' && item.local_id === focusedClaimId.value)
+    ?? graph.value.nodes.find((item) => item.node_type === 'claim')
+  if (!claim) return { claim: null, paths: [], directEvidence: [] }
+  const workIds = new Set(graph.value.edges
+    .filter((edge) => edge.relationship === 'SUPPORTS' && edge.target_id === claim.node_id)
+    .map((edge) => edge.source_id))
+  const evidenceNodes = new Map(
+    graph.value.nodes
+      .filter((item) => item.node_type === 'evidence')
+      .map((item) => [item.node_id, item]),
+  )
+  const evidenceForNode = (nodeId: string) => graph.value!.edges
+    .filter((edge) => edge.relationship === 'SUPPORTED_BY' && edge.source_id === nodeId)
+    .flatMap((edge) => {
+      const evidence = evidenceNodes.get(edge.target_id)
+      return evidence ? [evidence] : []
+    })
   return {
-    height,
-    nodes: [...positions.values()],
-    edges: graph.value.edges
-      .map((edge) => ({ edge, source: positions.get(edge.source_id), target: positions.get(edge.target_id) }))
-      .filter((item) => item.source && item.target),
+    claim,
+    paths: graph.value.nodes
+      .filter((item) => workIds.has(item.node_id))
+      .map((work) => ({ work, evidence: evidenceForNode(work.node_id) })),
+    directEvidence: evidenceForNode(claim.node_id),
   }
 })
 
@@ -177,7 +178,13 @@ async function loadPaperAndGraph() {
   if (!paperResponse.ok || !graphResponse.ok) throw new Error('论文证据或关系图暂时不可用。')
   paper.value = await paperResponse.json()
   graph.value = await graphResponse.json()
-  selectedNode.value = graph.value?.nodes.find((item) => item.node_type === 'paper') ?? null
+  focusedClaimId.value = paper.value?.claims[1]?.id ?? paper.value?.claims[0]?.id ?? null
+  selectedNode.value = graph.value?.nodes.find((item) => item.node_type === 'claim' && item.local_id === focusedClaimId.value) ?? null
+}
+
+function focusGraphClaim(claimId: string) {
+  focusedClaimId.value = claimId
+  selectedNode.value = graph.value?.nodes.find((item) => item.node_type === 'claim' && item.local_id === claimId) ?? null
 }
 
 async function ensureAssistantSession() {
@@ -434,10 +441,10 @@ onMounted(async () => {
 
         <div v-if="sidePanel === 'evidence'" class="evidence-panel">
           <template v-if="selectedEvidence">
-            <div class="selection-label"><span>{{ selectedEvidence.kind }}</span><b>{{ selectedEvidence.verified ? '已核验' : '待核验' }}</b></div>
+            <div class="selection-label"><span>{{ selectedEvidence.kind }}</span><b>{{ selectedEvidence.verified ? '已人工核验' : '开发注释待复核' }}</b></div>
             <h3>{{ selectedEvidence.label }}</h3>
             <blockquote>{{ selectedEvidence.excerpt }}</blockquote>
-            <p>页码：{{ selectedEvidence.page ?? '尚未由授权 PDF 核验' }}</p>
+            <p>这是中文开发注释，不是论文原句；真实自动解析页图请在论文逆向工程阅读器中查看。</p>
           </template>
           <template v-else>
             <h3>{{ selectedNode?.label ?? '证据检查器' }}</h3>
@@ -445,24 +452,32 @@ onMounted(async () => {
           </template>
           <div class="evidence-list">
             <button v-for="item in paper?.evidence.slice(0, 6)" :key="item.id" @click="selectEvidence(item)">
-              <span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ item.verified ? 'verified' : 'unverified' }}</small></div>
+              <span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ item.verified ? '已人工核验' : '开发注释待复核' }}</small></div>
             </button>
           </div>
           <RouterLink :to="`/papers/${paperId}`" data-testid="open-paper-reader">打开论文逆向工程阅读器 →</RouterLink>
         </div>
 
         <div v-else class="graph-panel">
-          <div class="graph-legend"><span class="paper">Paper</span><span class="claim">Claim</span><span class="work">Experiment / Artifact</span><span class="evidence">Evidence</span></div>
-          <div class="graph-scroll" data-testid="evidence-graph">
-            <svg v-if="graph" :viewBox="`0 0 800 ${graphLayout.height}`" role="img" aria-label="论文局部证据关系图">
-              <line v-for="item in graphLayout.edges" :key="`${item.edge.source_id}:${item.edge.relationship}:${item.edge.target_id}`" :x1="item.source!.x" :y1="item.source!.y" :x2="item.target!.x" :y2="item.target!.y" />
-              <g v-for="item in graphLayout.nodes" :key="item.node.node_id" :class="item.node.node_type" role="button" tabindex="0" @click="selectedNode = item.node">
-                <rect :x="item.x - 54" :y="item.y - 19" width="108" height="38" rx="9" />
-                <text :x="item.x" :y="item.y + 3" text-anchor="middle">{{ item.node.local_id ?? item.node.label.slice(0, 10) }}</text>
-              </g>
-            </svg>
+          <div class="graph-legend"><span class="claim">Claim</span><span class="work">Experiment / Artifact</span><span class="evidence">Evidence</span></div>
+          <div class="assistant-graph-focus"><b>只查看一个 Claim 的证据闭环</b><button v-for="claim in paper?.claims" :key="claim.id" :class="{ active: focusedClaimId === claim.id }" @click="focusGraphClaim(claim.id)">{{ claim.id }}</button></div>
+          <div class="graph-paths" data-testid="evidence-graph">
+            <article v-if="focusedGraph.claim" class="focused-claim-card">
+              <small>当前 Claim · {{ focusedGraph.claim.local_id }}</small>
+              <b>{{ focusedGraph.claim.label }}</b>
+            </article>
+            <article v-for="path in focusedGraph.paths" :key="path.work.node_id" class="graph-path-card" data-testid="assistant-graph-path">
+              <header><span>{{ path.work.node_type === 'experiment' ? '实验' : '图表' }}</span><b>{{ path.work.local_id }} · {{ path.work.label }}</b></header>
+              <p>{{ path.work.summary }}</p>
+              <div class="path-relation"><i>支撑当前 Claim</i><span>→</span><i>依据 {{ path.evidence.length }} 条 EvidenceAnchor</i></div>
+              <div class="path-evidence"><button v-for="evidence in path.evidence" :key="evidence.node_id" @click="selectedNode = evidence; sidePanel = 'evidence'">{{ evidence.local_id }} · {{ evidence.label }}</button></div>
+            </article>
+            <article class="direct-evidence-card">
+              <b>Claim 直接依据</b>
+              <button v-for="evidence in focusedGraph.directEvidence" :key="evidence.node_id" @click="selectedNode = evidence; sidePanel = 'evidence'">{{ evidence.local_id }} · {{ evidence.label }}</button>
+            </article>
           </div>
-          <p v-if="graph">{{ graph.nodes.length }} 个节点 · {{ graph.edges.length }} 条关系 · MySQL 仍是权威事实源</p>
+          <p v-if="graph">当前显示 {{ focusedGraph.paths.length }} 条实验/图表支撑路径；完整索引含 {{ graph.nodes.length }} 个节点。MySQL 仍是权威事实源，Neo4j 只是可重建关系索引。</p>
           <p v-for="warning in graph?.warnings" :key="warning" class="graph-warning">{{ warning }}</p>
         </div>
       </section>
@@ -479,7 +494,7 @@ onMounted(async () => {
 .research-inspector { min-width: 0; padding: 28px; border-left: 1px solid #dfe4df; background: #eef2ee; }.task-status, .evidence-inspector { border: 1px solid #d8e0da; border-radius: 14px; background: white; }.task-status { padding: 18px; }.task-status > header { display: flex; justify-content: space-between; align-items: center; }.task-status header p { margin: 0; color: #8c9992; font-size: 9px; letter-spacing: 1.3px; }.task-status h2 { margin: 5px 0 0; font-size: 18px; }.task-status header > span { padding: 6px 8px; border-radius: 99px; background: #e6efe9; color: #2a634b; font-size: 9px; font-weight: 900; }.task-status ol { display: grid; gap: 7px; margin: 16px 0 0; padding: 0; list-style: none; }.task-status li { display: grid; grid-template-columns: 27px 1fr auto; gap: 9px; align-items: center; padding: 10px; border-radius: 9px; background: #f4f6f3; }.task-status li > i { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cbd5ce; border-radius: 50%; font-style: normal; font-size: 9px; }.task-status li div { display: grid; gap: 2px; }.task-status li b { font-size: 11px; }.task-status li small { color: #849089; font-size: 9px; }.task-status li > span { color: #849089; font-size: 8px; text-transform: uppercase; }.task-status li.done > i { border-color: #4a9c6c; background: #4a9c6c; color: white; }.task-status li.running { background: #fff5d8; }.task-status li.blocked { background: #ffe5dc; }.empty-task { color: #79867e; font-size: 11px; line-height: 1.6; }
 .tool-run-log { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4e9e5; }.tool-run-log > p { margin: 0 0 3px; color: #8c9992; font-size: 8px; font-weight: 900; letter-spacing: 1.2px; }.tool-run-log article { display: grid; grid-template-columns: 54px 1fr; gap: 8px; padding: 8px; border-radius: 8px; background: #eef4f0; }.tool-run-log article > span { align-self: start; padding: 4px 5px; border-radius: 99px; background: #d8eadf; color: #26704c; font-size: 7px; font-weight: 900; text-align: center; text-transform: uppercase; }.tool-run-log article div { display: grid; gap: 2px; }.tool-run-log article b { font-size: 9px; }.tool-run-log article small { color: #7b8881; font-size: 8px; line-height: 1.4; }.task-status > footer { display: grid; gap: 3px; margin-top: 12px; padding: 10px 0 0; border-top: 1px solid #e4e9e5; background: transparent; font-weight: normal; }.task-status > footer span { overflow: hidden; color: #315d49; font-size: 8px; font-family: monospace; text-overflow: ellipsis; white-space: nowrap; }.task-status > footer small { color: #89958e; font-size: 7px; }
 .evidence-inspector { margin-top: 16px; overflow: hidden; }.evidence-inspector > header { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #e4e9e5; }.evidence-inspector > header button { padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: #718078; font-size: 11px; font-weight: 800; }.evidence-inspector > header button.active { background: #dfeee6; color: #205c45; }.evidence-inspector > header span { margin-left: auto; padding: 5px 7px; border: 1px solid #d4ddd7; border-radius: 99px; color: #6d7a72; font-size: 8px; }.evidence-panel, .graph-panel { padding: 18px; }.selection-label { display: flex; justify-content: space-between; }.selection-label span, .selection-label b { padding: 5px 7px; border-radius: 99px; background: #eef2ee; font-size: 8px; }.selection-label b { background: #ffe6dc; color: #a34224; }.evidence-panel h3 { margin: 14px 0 8px; font-size: 17px; line-height: 1.35; }.evidence-panel > p { color: #718078; font-size: 10px; line-height: 1.5; }.evidence-panel blockquote { margin: 13px 0; padding: 12px; border-left: 3px solid #ef683e; background: #f5f6f2; color: #43544b; font: 13px/1.6 Georgia,serif; }.evidence-list { display: grid; gap: 5px; margin: 17px 0; }.evidence-list button { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 9px; border: 1px solid #e1e6e2; border-radius: 8px; background: white; text-align: left; }.evidence-list button > span { color: #ef683e; font-size: 9px; font-weight: 900; }.evidence-list button div { display: grid; gap: 2px; }.evidence-list b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.evidence-list small { color: #909b94; font-size: 8px; }.evidence-panel > a { color: #205c45; font-size: 10px; font-weight: 800; text-decoration: none; }
-.graph-legend { display: flex; flex-wrap: wrap; gap: 5px; }.graph-legend span { padding: 4px 6px; border-radius: 99px; font-size: 8px; }.graph-legend .paper { background: #205c45; color: white; }.graph-legend .claim { background: #dfff43; }.graph-legend .work { background: #ffd7c9; }.graph-legend .evidence { background: #dce8ff; }.graph-scroll { max-height: 520px; margin-top: 12px; overflow: auto; border: 1px solid #e3e8e4; border-radius: 10px; background: #f9fbf9; }.graph-scroll svg { display: block; min-width: 720px; width: 100%; }.graph-scroll line { stroke: #c2ccc6; stroke-width: 1; }.graph-scroll g { cursor: pointer; }.graph-scroll rect { fill: white; stroke: #aebbb3; stroke-width: 1.3; }.graph-scroll text { fill: #23382e; font-size: 8px; pointer-events: none; }.graph-scroll g.paper rect { fill: #205c45; stroke: #205c45; }.graph-scroll g.paper text { fill: white; }.graph-scroll g.claim rect { fill: #efffb0; stroke: #b7d64c; }.graph-scroll g.experiment rect, .graph-scroll g.artifact rect { fill: #ffe3d9; stroke: #ef9b7e; }.graph-scroll g.evidence rect { fill: #e8effd; stroke: #9fb4dc; }.graph-panel > p { color: #718078; font-size: 9px; line-height: 1.45; }.graph-warning { padding-left: 8px; border-left: 2px solid #ef683e; }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 5px; }.graph-legend span { padding: 4px 6px; border-radius: 99px; font-size: 8px; }.graph-legend .claim { background: #dfff43; }.graph-legend .work { background: #ffd7c9; }.graph-legend .evidence { background: #dce8ff; }.assistant-graph-focus { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 10px; padding: 9px; border-radius: 8px; background: #f1f5f2; }.assistant-graph-focus b { margin-right: 5px; color: #66766d; font-size: 8px; }.assistant-graph-focus button { padding: 5px 7px; border: 1px solid #cbd6cf; border-radius: 99px; background: white; color: #52645a; font-size: 8px; }.assistant-graph-focus button.active { border-color: #205c45; background: #205c45; color: white; }.graph-paths { display: grid; gap: 8px; max-height: 520px; margin-top: 12px; overflow-y: auto; }.focused-claim-card, .graph-path-card, .direct-evidence-card { padding: 11px; border: 1px solid #dfe6e1; border-radius: 9px; background: #fbfcfb; }.focused-claim-card { border-color: #bdd75c; background: #f6ffd2; }.focused-claim-card small { display: block; color: #698024; font-size: 8px; }.focused-claim-card b { display: block; margin-top: 5px; color: #344218; font-size: 10px; line-height: 1.45; }.graph-path-card header { display: flex; gap: 7px; align-items: center; }.graph-path-card header span { padding: 4px 6px; border-radius: 5px; background: #ffe3d9; color: #91482e; font-size: 7px; }.graph-path-card header b { font-size: 9px; }.graph-path-card > p { margin: 7px 0; color: #66756d; font-size: 8px; line-height: 1.45; }.graph-path-card .path-relation { display: flex; gap: 5px; align-items: center; color: #718078; }.graph-path-card .path-relation i { font-size: 7px; font-style: normal; }.graph-path-card .path-evidence, .direct-evidence-card { display: flex; flex-wrap: wrap; gap: 5px; }.graph-path-card .path-evidence { margin-top: 8px; }.graph-path-card .path-evidence button, .direct-evidence-card button { padding: 5px 6px; border: 1px solid #bbc9df; border-radius: 6px; background: #edf2fc; color: #49617e; font-size: 7px; }.direct-evidence-card > b { width: 100%; color: #607268; font-size: 8px; }.graph-panel > p { color: #718078; font-size: 9px; line-height: 1.45; }.graph-warning { padding-left: 8px; border-left: 2px solid #ef683e; }
 @media (max-width: 1250px) { .assistant-view { grid-template-columns: 1fr; }.research-inspector { display: grid; grid-template-columns: .8fr 1.2fr; gap: 15px; border-left: 0; border-top: 1px solid #dfe4df; }.evidence-inspector { margin-top: 0; }.quick-task-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 720px) { .assistant-main { padding: 30px 18px 45px; }.assistant-hero { display: grid; }.quick-task-grid, .research-inspector { grid-template-columns: 1fr; }.research-inspector { padding: 18px; }.message-list article { max-width: 95%; } }
 </style>

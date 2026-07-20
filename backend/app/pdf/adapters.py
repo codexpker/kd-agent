@@ -206,16 +206,21 @@ class PyMuPdfAdapter:
         ref_pattern = re.compile(r"\b(?:Figure|Fig\.|Table)\s*\d+\b", re.I)
         try:
             page_lines = [self._page_lines(page) for page in document]
+            toc_sections = self._toc_sections(document)
+            sections.extend(toc_sections)
             for page_index, lines in enumerate(page_lines):
                 page_number = page_index + 1
                 for line, line_bbox in lines:
-                    heading_match = heading.match(line)
+                    heading_match = None if toc_sections else heading.match(line)
                     if heading_match:
+                        title = heading_match.group(2).strip()
+                        if sum(character.isalpha() for character in title) < 2:
+                            continue
                         level = heading_match.group(1).count(".") + 1
                         sections.append(
                             ParsedSection(
                                 id=f"sec-{len(sections) + 1}",
-                                title=heading_match.group(2),
+                                title=title,
                                 level=level,
                                 page_start=page_number,
                                 page_end=page_number,
@@ -317,6 +322,54 @@ class PyMuPdfAdapter:
                 if text and bbox is not None:
                     result.append((text, [float(value) for value in bbox]))
         return result
+
+    @staticmethod
+    def _toc_sections(document: object) -> list[ParsedSection]:
+        get_toc = getattr(document, "get_toc", None)
+        if get_toc is None:
+            return []
+        try:
+            entries = get_toc(simple=True)
+        except Exception:
+            return []
+        sections: list[ParsedSection] = []
+        page_count = int(getattr(document, "page_count", 0))
+        for entry in entries:
+            if not isinstance(entry, Sequence) or len(entry) < 3:
+                continue
+            try:
+                level = int(entry[0])
+                raw_title = str(entry[1]).strip()
+                page_number = int(entry[2])
+            except (TypeError, ValueError):
+                continue
+            if level < 1 or not raw_title or not 1 <= page_number <= page_count:
+                continue
+            title = re.sub(
+                r"^(?:\d+(?:\.\d+)*|[A-Z](?:\.\d+)*)\.?\s+",
+                "",
+                raw_title,
+            ).strip()
+            if not title:
+                title = raw_title
+            heading_bbox = None
+            try:
+                matches = document[page_number - 1].search_for(title)
+                if matches:
+                    heading_bbox = [float(value) for value in matches[0]]
+            except Exception:
+                heading_bbox = None
+            sections.append(
+                ParsedSection(
+                    id=f"sec-{len(sections) + 1}",
+                    title=title,
+                    level=level,
+                    page_start=page_number,
+                    page_end=page_number,
+                    heading_bbox=heading_bbox,
+                )
+            )
+        return sections
 
     @classmethod
     def _attach_tables(

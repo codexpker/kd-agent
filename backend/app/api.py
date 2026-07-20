@@ -1,5 +1,5 @@
 from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from app.config import get_settings
 from app.assistant_models import (
@@ -48,6 +48,11 @@ from app.services.assistant_sessions import (
 )
 from app.services.astron_workflow import AssistantProviderError, AstronWorkflowClient
 from app.services.document_structure import DocumentStructureService
+from app.services.private_pdf_preview import (
+    PrivatePdfNotFoundError,
+    PrivatePdfPreviewError,
+    PrivatePdfPreviewService,
+)
 from app.services.evidence_graph import (
     EvidenceGraphNotFoundError,
     EvidenceGraphUnavailableError,
@@ -720,3 +725,60 @@ def document_structure(paper_id: str) -> DocumentStructure:
     if result is None:
         raise HTTPException(status_code=404, detail="No document structure for this paper")
     return result
+
+
+def _private_preview_structure(paper_id: str) -> tuple[DocumentStructure, object]:
+    settings = get_settings()
+    if (
+        not settings.private_pdf_preview_enabled
+        or settings.research_gateway_mode != "local"
+    ):
+        raise HTTPException(status_code=404, detail="Private PDF preview is disabled")
+    structure = document_structure(paper_id)
+    if structure.source != "parsed_pdf":
+        raise HTTPException(status_code=404, detail="No parsed PDF preview for this paper")
+    return structure, settings
+
+
+def _private_preview_response(payload: bytes, structure: DocumentStructure) -> Response:
+    return Response(
+        content=payload,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-KD-Preview": "local-private-copy",
+            "X-KD-Source-SHA256": structure.file_sha256 or "",
+        },
+    )
+
+
+@router.get("/papers/{paper_id}/document-preview/pages/{page_number}")
+def document_preview_page(paper_id: str, page_number: int) -> Response:
+    structure, settings = _private_preview_structure(paper_id)
+    try:
+        payload = PrivatePdfPreviewService(settings.private_pdf_preview_root).render_page(
+            structure, page_number
+        )
+    except PrivatePdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PrivatePdfPreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _private_preview_response(payload, structure)
+
+
+@router.get("/papers/{paper_id}/document-preview/artifacts/{artifact_id}")
+def document_preview_artifact(paper_id: str, artifact_id: str) -> Response:
+    structure, settings = _private_preview_structure(paper_id)
+    artifact = next((item for item in structure.artifacts if item.id == artifact_id), None)
+    if artifact is None or artifact.page is None:
+        raise HTTPException(status_code=404, detail="No parsed artifact preview")
+    try:
+        payload = PrivatePdfPreviewService(settings.private_pdf_preview_root).render_page(
+            structure, artifact.page, artifact
+        )
+    except PrivatePdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PrivatePdfPreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _private_preview_response(payload, structure)

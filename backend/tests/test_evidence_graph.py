@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app import api as api_module
 from app.gold_dataset import GoldDataset
 from app.main import app
 from app.services.evidence_graph import (
@@ -115,7 +116,14 @@ def test_gold_evidence_graph_is_closed_and_provenance_bounded() -> None:
     assert graph.warnings
 
 
-def test_evidence_graph_api_returns_gold_snapshot_and_unknown_is_404() -> None:
+def test_evidence_graph_api_returns_gold_snapshot_and_unknown_is_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: type("Settings", (), {"evidence_graph_backend": "gold"})(),
+    )
     client = TestClient(app)
     response = client.get("/api/v1/papers/anomaly-transformer-2022/evidence-graph")
 

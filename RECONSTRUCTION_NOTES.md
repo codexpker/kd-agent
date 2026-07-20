@@ -30,7 +30,7 @@
 - PaperSource已纳入Gold事务：稳定来源键允许多来源并存；同键按来源质量优先、同质量按严格更新的抓取时间替换；低质量或过期候选记为`protected`而不覆盖，并确定唯一主来源。元数据访问策略不替代PDF持久化权利确认。
 - 已新增`0003_reconstructed_pdf_layout`及PDF dry-run/显式提交CLI。规范化表只保存权利依据、文件哈希、解析器版本、章节、Figure/Table、bbox、图注、结构化表格和正文引用位置，不保存PDF原文件或路径。无权利依据时持久化硬阻断；查询优先返回`parsed_pdf`并安全回退到无伪造版面字段的`gold_snapshot`。
 - 已建立三解析器统一映射与评测框架：适配器只产出`ParsedDocument`，GROBID TEI和MinerU JSON已覆盖章节、层级、页码/bbox、图表/图注、正文引用及结构化表格字段；数据库写入仍由独立服务负责。`layout-gold-v1`要求显式区分真实仲裁Gold与`synthetic_smoke_test`，并输出JSON和Markdown七类指标。内置满分样例只验证程序闭合，不是实际解析质量结论。
-- 已审计Anomaly Transformer首篇真实版面Gold前置条件：初次审计无PDF；随后用户指定了被Git忽略的本地候选PDF，但尚未确认权利依据和来源记录。MySQL仍无该论文`PdfSource`，现有PaperSource仅允许元数据且未确认全文权利，也未登记第二标注员。案例清单同时标记`needs_authorized_pdf`与`needs_second_annotator`。已提供授权后哈希/来源记录、独立空白标注、候选结果规范化导入、字段级差异和全未决仲裁模板；在合法PDF、双人标注和仲裁到位前不生成或声称真实Gold。
+- Anomaly Transformer本地候选现已由用户确认是可本地处理、不可再分发的`user_private_copy`。MySQL记录精确SHA-256与权利依据，并保存PyMuPDF 1.28.0真实自动解析的20页、28章节、25个Figure/Table和27处正文引用；原PDF和本地路径没有入库或提交。案例清单保持`annotation_not_started`，因为当前人工工作后推且没有注册标注员；这些解析事实不是frozen Gold或真实评测成绩。
 
 ## R3 重建进展
 
@@ -56,5 +56,6 @@
 - `user_declared`与`externally_verifiable`已在契约层区分；外部可核验记录必须有签发方、证据引用和SHA-256，但固定保持`pending_external_verification`。当前没有认证用户或受信核验者系统，因此不能宣称身份已认证或证据已验证。
 - 上传原始字节永不写MySQL；`process_session`只在受控临时目录保留规范化数据并设置最长72小时到期，进程退出可能更早清除；`metadata_only`立即只留哈希/Schema且不能绘图。显式删除或到期会清理临时图表并追加审计修订，MySQL只保留元数据。
 - 已建立仅限论文拆解的会话与工具编排层：每轮保存`trace_id`、提示词版本、消息来源、EvidenceAnchor和本地工具运行；默认离线规则模式不调用外部模型。星辰工作流适配器按官方HTTP协议实现并由Mock验证鉴权和请求/响应映射，但没有团队真实密钥和已发布Flow的线上验收证据，不能声称外部模型链路已可用。会话当前只在进程内存保存，不是MySQL权威历史。
+- 已完成单篇演示加固：本地私有PDF可在显式开关下按MySQL哈希即时渲染为不可缓存PNG，原PDF与路径不分发；中文开发注释与PyMuPDF客观版面事实分区显示。Neo4j接口真实返回完整可重建索引，前端默认按单个Claim裁剪为可读证据闭环，不再用全图毛线团作为主要表达。
 
 继续开发时以 `docs/ROADMAP.md` 为准，不要伪造旧 Git 提交号、PDF 页码或正式评测结果。

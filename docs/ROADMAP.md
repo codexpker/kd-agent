@@ -42,13 +42,13 @@
   - [x] 生成JSON与Markdown报告；CI内置样例强制标记`synthetic_smoke_test`，不得作为真实解析成绩。
   - [x] 未配置GROBID或MinerU客户端时明确返回`unavailable`，不静默生成或替代解析结果。
 - [ ] Step 4b：建立Anomaly Transformer第一篇可审核真实版面Gold。
-  - [x] 审计本地文件和MySQL来源：初次审计无PDF；现已发现用户指定的本地候选PDF，但尚未确认权利依据。MySQL仍无`PdfSource`，唯一来源为未确认全文权利的`metadata_only`；未联网下载。
-  - [x] 建立案例阻塞清单与数据清单，明确`needs_authorized_pdf`、`needs_second_annotator`，不标记frozen。
+  - [x] 用户已明确提供本地私有副本并授权本地处理；记录`user_private_copy`依据、确认人、不可再分发说明、文件大小及SHA-256 `ff8d3bb627fce9914eb8a9e78c4139e4852771dbee801da2c766dea028a17053`，未联网下载、未提交PDF。
+  - [x] PyMuPDF 1.28.0真实解析已写入MySQL：20页、28个TOC章节、25个Figure/Table和27处正文引用；查询返回最新成功运行，原PDF与本地路径未入库。该结果是待复核的`parsed_pdf`，不是版面Gold或解析器成绩。
+  - [x] 案例清单准确标记`annotation_not_started`：没有把PDF提供者伪记为标注员，也没有把开发种子标记为frozen；人工工作按当前排期后推。
   - [x] 提供默认dry-run的授权PDF初始化、SHA-256/来源记录、PyMuPDF候选、GROBID/MinerU候选导入工具；不复制PDF或外部原始输出。
   - [x] 提供A/B独立空白标注、第二标注员显式注册、来源一致性校验、字段级差异报告和全未决仲裁模板；不自动覆盖分歧。
-  - [ ] 获得用户明确提供、开放许可或机构授权的Anomaly Transformer PDF，并记录来源、权利依据和精确SHA-256。
   - [ ] 注册两名不同标注员和独立仲裁员，完成章节、图表、引用、页码/bbox、图注及表格结构标注与仲裁。
-  - [ ] 对同一SHA运行固定版本的PyMuPDF、GROBID、MinerU真实评测，并输出分项错误类型分析。
+  - [ ] 为同一SHA生成可审计的GROBID和MinerU真实候选；待双人仲裁Gold完成后，正式运行三解析器评测并输出分项错误类型分析。
 - [ ] 将 Gold 扩至 5–10 篇并完成仲裁。
 
 ## R3
@@ -118,7 +118,13 @@
   - [x] 阅读器复用`paper-deconstruct`、`document-structure`和`evidence-graph`真实接口，不以聊天文本重新生成或改写结构化事实；未知或未公开记录继续返回并显示不可加载。
   - [x] `DocumentStructure`客观版面与`PaperDeconstruction`科研语义保持分区；`gold_snapshot`状态明确阻断PDF定位，不显示未核验页码、图注、bbox或正文引用，也不提供PDF文件分发端点。
   - [x] 提供离线规则式阅读问题导航、Claim筛选和证据透镜联动；关系图只作为局部闭合检查，EvidenceAnchor列表仍是主要审核界面。
-  - [x] Playwright黄金流程覆盖8步叙事链、2项实验意图、5张图表角色、21个局部证据节点以及未授权PDF定位硬阻断。
+  - [x] Playwright黄金流程覆盖8步叙事链、2项实验意图、5张图表角色、按Claim聚焦的10个局部证据节点以及未授权PDF定位硬阻断。
+- [x] 完成Anomaly Transformer单篇真实解析演示加固（不等于Gold完成）。
+  - [x] 新增默认关闭、仅本地模式可启用的受控PDF预览；服务只在配置根目录中按MySQL SHA-256匹配私有副本，只返回即时PNG，响应`private, no-store`，不暴露路径、不提供原PDF下载。
+  - [x] 点击章节或EvidenceAnchor可联动真实解析页；Figure/Table优先显示自动检测的对象/图注框、真实解析图注与正文引用，加载失败明确报错而不显示占位成功图。
+  - [x] 开发语义记录改为中文可读转述，并与`pymupdf自动解析（待复核）`客观版面事实分栏显示；人工核验仍为0/10，不把自动解析写成双人Gold。
+  - [x] 科研助理默认用纵向路径卡展示一个Claim、支撑实验/图表和相关EvidenceAnchor；论文阅读器保留显示`支撑/依据`语义的10节点局部图。Neo4j真实返回30节点/65关系，MySQL仍为权威源。
+  - [x] 真实接口验收通过：`parsed_pdf`、`neo4j`和受控PNG均来自本地服务；星辰配置为空，助手继续明确显示`offline`，没有把Mock或规则回答伪装成线上模型调用。
 - [x] 建立论文拆解会话、工具运行历史和星辰真实协议适配基础闭环（不代表星辰线上调用已验证）。
   - [x] 新增创建/读取会话与发送消息API，保存`session_id`、`trace_id`、提示词版本、消息来源、EvidenceAnchor和实际工具运行；当前明确为`process_memory`，API重启后清空。
   - [x] 本轮只编排`paper_deconstruct`、`document_structure`和`evidence_graph`，工具选择由可测试的服务端规则完成，不宣称模型已自主规划工具。

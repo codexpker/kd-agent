@@ -114,4 +114,9 @@ SHA-256、权利确认、解析器版本、章节、Figure/Table、bbox、图注
 `GET /api/v1/papers/{paper_id}/document-structure`优先返回`parsed_pdf`，否则返回不带伪造版面字段的
 `gold_snapshot`。
 
+已确认权利并完成持久化后，本地演示可额外配置
+`PRIVATE_PDF_PREVIEW_ENABLED=true`和`PRIVATE_PDF_PREVIEW_ROOT`。页面/图表预览接口只按数据库
+SHA-256匹配本地文件并返回`private, no-store` PNG；它不分发原PDF、不暴露路径，非`local`模式
+会硬阻断。详见`docs/LOCAL_DEVELOPMENT.md`。
+
 详细说明见 `docs/LOCAL_DEVELOPMENT.md` 与 `docs/ROADMAP.md`。

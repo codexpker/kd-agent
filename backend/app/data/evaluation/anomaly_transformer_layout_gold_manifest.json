@@ -4,45 +4,52 @@
   "paper_id": "anomaly-transformer-2022",
   "title": "Anomaly Transformer: Time Series Anomaly Detection with Association Discrepancy",
   "workflow_status": "blocked",
-  "rights_status": "needs_authorized_pdf",
-  "annotation_status": "needs_second_annotator",
-  "source": null,
+  "rights_status": "confirmed",
+  "annotation_status": "annotation_not_started",
+  "source": {
+    "source_description": "User-supplied private copy for the local golden demo; redistribution is not authorized.",
+    "source_uri": null,
+    "rights_basis": "user_private_copy",
+    "rights_confirmed_by": "workspace-user",
+    "rights_confirmed_at": "2026-07-20T00:00:00+08:00",
+    "rights_note": "The user supplied this local private copy and approved local processing. Do not commit or redistribute the PDF or rendered pages.",
+    "file_sha256": "ff8d3bb627fce9914eb8a9e78c4139e4852771dbee801da2c766dea028a17053",
+    "file_size_bytes": 10668204,
+    "page_count": 20
+  },
   "annotator_a_id": null,
   "annotator_b_id": null,
   "adjudicator_id": null,
   "parser_candidates": [
     {
       "parser_name": "pymupdf",
-      "status": "blocked_missing_authorized_pdf",
-      "parser_version": null,
+      "status": "persisted_not_exported",
+      "parser_version": "1.28.0",
       "relative_path": null,
       "error": null
     },
     {
       "parser_name": "grobid",
-      "status": "blocked_missing_authorized_pdf",
+      "status": "pending_external_parser",
       "parser_version": null,
       "relative_path": null,
       "error": null
     },
     {
       "parser_name": "mineru",
-      "status": "blocked_missing_authorized_pdf",
+      "status": "pending_external_parser",
       "parser_version": null,
       "relative_path": null,
       "error": null
     }
   ],
   "blockers": [
-    "A local Anomaly Transformer PDF candidate is present, but its rights basis and source provenance have not been confirmed.",
-    "MySQL has no PdfSource for this paper; its only PaperSource is metadata_only with full_text_rights_confirmed=false.",
-    "A distinct second annotator and an independent adjudicator have not been registered."
+    "Human layout annotation is postponed; no annotator A, annotator B or adjudicator has been registered.",
+    "PyMuPDF facts are persisted in MySQL for the local demo but are not adjudicated layout Gold.",
+    "GROBID and MinerU external parser candidates have not been generated."
   ],
   "next_actions": [
-    "Confirm whether the local candidate is an open-full-text, user-private-copy or institution-authorized source.",
-    "Record source description or official URL, rights basis, confirmer and rights note without committing the PDF.",
-    "Run layout_gold_workflow prepare to hash the exact file and create a blank independent annotation case.",
-    "Register two distinct annotators; neither copies the other annotation file or parser output.",
+    "When human work resumes, register annotator A and annotator B as two distinct people; neither copies the other annotation file or parser output.",
     "Generate versioned PyMuPDF, GROBID and MinerU candidates for the same SHA-256.",
     "Import both annotation files to create an unresolved diff and adjudication template.",
     "Register an independent adjudicator and resolve every difference before producing adjudicated Gold.",

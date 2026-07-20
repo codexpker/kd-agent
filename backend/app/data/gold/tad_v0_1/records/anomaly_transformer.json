@@ -6,48 +6,47 @@
   "year": 2022,
   "status": "development_seed",
   "narrative_moves": [
-    {"id":"nm-1","order":1,"move":"Establish problem","purpose":"Explain why unsupervised multivariate time-series anomaly detection matters.","evidence_ids":["ev-1"]},
-    {"id":"nm-2","order":2,"move":"Critique point-wise reconstruction","purpose":"Show that reconstruction error alone misses relationship-level anomaly signals.","evidence_ids":["ev-2"]},
-    {"id":"nm-3","order":3,"move":"Introduce association discrepancy","purpose":"Turn the difference between prior and learned associations into an anomaly criterion.","evidence_ids":["ev-3"]},
-    {"id":"nm-4","order":4,"move":"Resolve optimization tension","purpose":"Use minimax learning to amplify normal/anomalous association differences.","evidence_ids":["ev-4"]},
-    {"id":"nm-5","order":5,"move":"Validate detection performance","purpose":"Compare against representative baselines on benchmark datasets.","evidence_ids":["ev-5","ev-6"]},
-    {"id":"nm-6","order":6,"move":"Isolate mechanism","purpose":"Test whether association discrepancy and training strategy contribute independently.","evidence_ids":["ev-7"]},
-    {"id":"nm-7","order":7,"move":"Visualize explanation","purpose":"Make learned temporal associations and anomaly contrast inspectable.","evidence_ids":["ev-8","ev-9"]},
-    {"id":"nm-8","order":8,"move":"State boundary","purpose":"Limit conclusions to evaluated datasets and protocol.","evidence_ids":["ev-10"]}
+    {"id":"nm-1","order":1,"move":"提出问题","purpose":"说明为什么无监督多变量时间序列异常检测值得研究。","evidence_ids":["ev-1"]},
+    {"id":"nm-2","order":2,"move":"指出逐点重构的不足","purpose":"说明只看重构误差可能遗漏变量关系层面的异常信号。","evidence_ids":["ev-2"]},
+    {"id":"nm-3","order":3,"move":"引入关联差异","purpose":"把先验关联与学习关联之间的差异转化为异常判断信号。","evidence_ids":["ev-3"]},
+    {"id":"nm-4","order":4,"move":"处理优化张力","purpose":"用极小极大学习强化正常样本与异常样本的关联差异。","evidence_ids":["ev-4"]},
+    {"id":"nm-5","order":5,"move":"验证检测效果","purpose":"在多个基准数据集上与代表性基线比较。","evidence_ids":["ev-5","ev-6"]},
+    {"id":"nm-6","order":6,"move":"隔离关键机制","purpose":"检验关联差异与训练策略是否分别产生贡献。","evidence_ids":["ev-7"]},
+    {"id":"nm-7","order":7,"move":"可视化解释","purpose":"让读者检查模型学习到的时间关联以及正常/异常对比。","evidence_ids":["ev-8","ev-9"]},
+    {"id":"nm-8","order":8,"move":"声明结论边界","purpose":"把结论限制在论文实际评测的数据集与协议内。","evidence_ids":["ev-10"]}
   ],
   "claims": [
-    {"id":"cl-1","claim_type":"problem","statement":"Anomalies can be characterized by temporal association patterns rather than only point-wise reconstruction error.","evidence_ids":["ev-2","ev-3"]},
-    {"id":"cl-2","claim_type":"method","statement":"Association discrepancy supplies an anomaly-sensitive signal and minimax learning sharpens it.","evidence_ids":["ev-3","ev-4"]},
-    {"id":"cl-3","claim_type":"result","statement":"The reported method improves benchmark detection results under the paper's evaluation protocol.","evidence_ids":["ev-5","ev-6"]},
-    {"id":"cl-4","claim_type":"boundary","statement":"The evidence is limited to the datasets, anomaly labels, preprocessing and point-adjustment protocol used in the study.","evidence_ids":["ev-10"]}
+    {"id":"cl-1","claim_type":"problem","statement":"异常可以由时间关联模式刻画，而不只是由逐点重构误差刻画。","evidence_ids":["ev-2","ev-3"]},
+    {"id":"cl-2","claim_type":"method","statement":"关联差异提供对异常敏感的信号，极小极大学习进一步强化这一信号。","evidence_ids":["ev-3","ev-4"]},
+    {"id":"cl-3","claim_type":"result","statement":"在论文采用的评测协议下，作者报告的方法提升了基准异常检测结果。","evidence_ids":["ev-5","ev-6"]},
+    {"id":"cl-4","claim_type":"boundary","statement":"当前证据只覆盖论文使用的数据集、异常标签、预处理与点调整协议。","evidence_ids":["ev-10"]}
   ],
   "experiment_intents": [
-    {"id":"ex-1","title":"Main benchmark comparison","question":"Does the complete method outperform representative alternatives across datasets?","design_reason":"Multiple public datasets and baseline families test whether gains generalize beyond one operational setting.","variables":["dataset","baseline family","precision","recall","F1"],"supports_claim_ids":["cl-3"],"evidence_ids":["ev-5","ev-6"]},
-    {"id":"ex-2","title":"Mechanism ablation","question":"Which components are necessary for the observed gain?","design_reason":"Removing discrepancy or minimax elements separates the claimed mechanism from model capacity.","variables":["association discrepancy","minimax strategy","F1"],"supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]}
+    {"id":"ex-1","title":"主基准对比","question":"完整方法能否在多个数据集上优于代表性替代方法？","design_reason":"跨多个公开数据集和多类基线比较，用来检查提升是否只出现在单一运行场景。","variables":["数据集","基线类别","Precision","Recall","F1"],"supports_claim_ids":["cl-3"],"evidence_ids":["ev-5","ev-6"]},
+    {"id":"ex-2","title":"机制消融","question":"哪些组件是观察到性能提升所必需的？","design_reason":"分别移除关联差异或极小极大策略，用来区分所主张机制的贡献与模型容量效应。","variables":["关联差异","极小极大策略","F1"],"supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]}
   ],
   "artifacts": [
-    {"id":"ar-1","artifact_type":"figure","label":"Figure 1","role":"Motivation diagram","why_here":"Contrasts normal and anomalous association patterns before formalizing the method.","supports_claim_ids":["cl-1"],"evidence_ids":["ev-2"]},
-    {"id":"ar-2","artifact_type":"figure","label":"Figure 2","role":"Architecture overview","why_here":"Maps the abstract discrepancy idea to a trainable pipeline.","supports_claim_ids":["cl-2"],"evidence_ids":["ev-4"]},
-    {"id":"ar-3","artifact_type":"table","label":"Table 1","role":"Primary quantitative evidence","why_here":"Condenses the cross-dataset baseline comparison used for the main result claim.","supports_claim_ids":["cl-3"],"evidence_ids":["ev-5"]},
-    {"id":"ar-4","artifact_type":"table","label":"Table 2","role":"Ablation evidence","why_here":"Shows whether removing claimed components changes the outcome.","supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]},
-    {"id":"ar-5","artifact_type":"figure","label":"Figure 4","role":"Qualitative mechanism evidence","why_here":"Lets readers inspect association maps instead of trusting aggregate scores alone.","supports_claim_ids":["cl-1","cl-2"],"evidence_ids":["ev-8","ev-9"]}
+    {"id":"ar-1","artifact_type":"figure","label":"Figure 1","role":"问题动机图","why_here":"在形式化方法之前，先对比正常与异常的关联模式。","supports_claim_ids":["cl-1"],"evidence_ids":["ev-2"]},
+    {"id":"ar-2","artifact_type":"figure","label":"Figure 2","role":"模型架构总览","why_here":"把抽象的关联差异思想映射成可训练流程。","supports_claim_ids":["cl-2"],"evidence_ids":["ev-4"]},
+    {"id":"ar-3","artifact_type":"table","label":"Table 1","role":"主要定量证据","why_here":"集中呈现跨数据集、跨基线的比较，用于支撑主要结果 Claim。","supports_claim_ids":["cl-3"],"evidence_ids":["ev-5"]},
+    {"id":"ar-4","artifact_type":"table","label":"Table 2","role":"消融证据","why_here":"展示移除所主张组件后，实验结果是否发生变化。","supports_claim_ids":["cl-2","cl-3"],"evidence_ids":["ev-7"]},
+    {"id":"ar-5","artifact_type":"figure","label":"Figure 4","role":"机制的定性证据","why_here":"让读者直接检查关联图，而不是只依赖汇总分数。","supports_claim_ids":["cl-1","cl-2"],"evidence_ids":["ev-8","ev-9"]}
   ],
   "evidence": [
-    {"id":"ev-1","kind":"section","label":"Introduction","excerpt":"Problem motivation and task framing; paraphrased development annotation.","page":null,"verified":false},
-    {"id":"ev-2","kind":"figure","label":"Figure 1","excerpt":"Conceptual contrast between normal and anomalous temporal associations; verify against authorized PDF.","page":null,"verified":false},
-    {"id":"ev-3","kind":"section","label":"Association Discrepancy","excerpt":"Definition and intended anomaly signal; paraphrased development annotation.","page":null,"verified":false},
-    {"id":"ev-4","kind":"section","label":"Minimax Association Learning","excerpt":"Optimization rationale; paraphrased development annotation.","page":null,"verified":false},
-    {"id":"ev-5","kind":"table","label":"Table 1","excerpt":"Main reported benchmark comparison; exact values intentionally omitted until PDF verification.","page":null,"verified":false},
-    {"id":"ev-6","kind":"section","label":"Main Results","excerpt":"Authors' interpretation of quantitative comparisons; verify in source.","page":null,"verified":false},
-    {"id":"ev-7","kind":"table","label":"Table 2","excerpt":"Component ablation summary; exact values intentionally omitted until verification.","page":null,"verified":false},
-    {"id":"ev-8","kind":"figure","label":"Figure 4","excerpt":"Learned association visualization; role annotation requires second reviewer.","page":null,"verified":false},
-    {"id":"ev-9","kind":"section","label":"Case Study","excerpt":"Qualitative discussion connecting associations and detected anomalies.","page":null,"verified":false},
-    {"id":"ev-10","kind":"section","label":"Evaluation Boundary","excerpt":"Coverage is bounded by evaluated datasets and protocol; reviewer-added boundary statement.","page":null,"verified":false}
+    {"id":"ev-1","kind":"section","label":"Introduction","excerpt":"用于说明问题动机与任务设定的开发注释；这是转述，不是论文原句。","page":null,"verified":false},
+    {"id":"ev-2","kind":"figure","label":"Figure 1","excerpt":"用于对比正常与异常时间关联的概念图；仍需依据授权 PDF 进行人工复核。","page":null,"verified":false},
+    {"id":"ev-3","kind":"section","label":"Association Discrepancy","excerpt":"关于关联差异定义及其作为异常信号用途的开发注释；这是转述。","page":null,"verified":false},
+    {"id":"ev-4","kind":"section","label":"Minimax Association Learning","excerpt":"关于极小极大学习优化理由的开发注释；这是转述。","page":null,"verified":false},
+    {"id":"ev-5","kind":"table","label":"Table 1","excerpt":"作者报告的主要基准对比；在人工核验前刻意不转录具体数值。","page":null,"verified":false},
+    {"id":"ev-6","kind":"section","label":"Main Results","excerpt":"作者对定量比较的解释，仍需回到原文复核。","page":null,"verified":false},
+    {"id":"ev-7","kind":"table","label":"Table 2","excerpt":"组件消融的开发摘要；人工核验前刻意不转录具体数值。","page":null,"verified":false},
+    {"id":"ev-8","kind":"figure","label":"Figure 4","excerpt":"模型学习关联的可视化；其科研叙事角色仍需第二位标注员复核。","page":null,"verified":false},
+    {"id":"ev-9","kind":"section","label":"Case Study","excerpt":"连接关联模式与异常检测结果的定性讨论。","page":null,"verified":false},
+    {"id":"ev-10","kind":"section","label":"Evaluation Boundary","excerpt":"结论覆盖范围受所评测数据集与协议限制；这是开发阶段加入的边界说明。","page":null,"verified":false}
   ],
   "limitations": [
-    "This reconstructed record is a single-reviewer development seed, not a frozen Gold item.",
-    "Page numbers and exact quotations are withheld until an authorized full text is parsed and reviewed.",
-    "Reported comparisons should be re-evaluated under consistent, non-inflating anomaly scoring protocols."
+    "当前重建记录只是单人开发种子，不是已冻结的 Gold 数据。",
+    "真实 PDF 已获本地处理授权并完成自动解析，但页码映射与原文引述尚未经过双人复核。",
+    "论文报告的比较仍应在一致、不过度放大的异常评分协议下重新评估。"
   ]
 }
-

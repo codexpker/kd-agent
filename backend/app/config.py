@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     embedding_backend: str = "hash"
     document_structure_backend: str = "gold"
     evidence_graph_backend: str = "gold"
+    private_pdf_preview_enabled: bool = False
+    private_pdf_preview_root: str = ""
     assistant_backend: str = "offline"
     project_claim_backend: str = "memory"
     experiment_run_backend: str = "memory"

@@ -268,6 +268,31 @@ GET /api/v1/papers/anomaly-transformer-2022/document-structure
 PyMuPDF表格探测。复杂双栏、扫描页、跨页表格和矢量Figure可能无法得到对象bbox或结构化
 单元格，此时对应字段保持为空并写入warnings，不得据此声称解析完整。
 
+#### 本地私有PDF受控预览
+
+对于已经通过上述权利门禁写入MySQL的`parsed_pdf`，可以在**仅本机演示**环境显式启用页面
+渲染：
+
+```dotenv
+RESEARCH_GATEWAY_MODE=local
+DOCUMENT_STRUCTURE_BACKEND=mysql
+PRIVATE_PDF_PREVIEW_ENABLED=true
+PRIVATE_PDF_PREVIEW_ROOT=/absolute/path/to/rights-confirmed-pdfs
+```
+
+接口只接收论文ID、页码或已解析Artifact ID，不接收文件路径：
+
+```http
+GET /api/v1/papers/{paper_id}/document-preview/pages/{page_number}
+GET /api/v1/papers/{paper_id}/document-preview/artifacts/{artifact_id}
+```
+
+服务递归检查配置目录中的PDF，只有文件SHA-256与MySQL最新`DocumentStructure.file_sha256`
+完全一致时才即时渲染PNG。Artifact预览会对已有对象bbox/图注bbox画框；缺少对象bbox时仍显示
+整页并只标出可用图注框。响应固定为`Cache-Control: private, no-store`，不会返回原PDF、本地路径
+或文件名。该能力默认关闭，并且在`RESEARCH_GATEWAY_MODE`不是`local`时硬阻断；不要在共享部署
+中指向私有论文目录。自动解析页图与位置仍需人工复核，不能作为已仲裁Gold。
+
 ### Step 4a 三解析器统一映射与评测框架
 
 `PyMuPdfAdapter`、`GrobidTeiAdapter`和`MinerUJsonAdapter`统一返回`ParsedDocument`。GROBID映射

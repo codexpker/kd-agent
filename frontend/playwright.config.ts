@@ -36,6 +36,9 @@ export default defineConfig({
       env: {
         RETRIEVAL_BACKEND: 'demo',
         DOCUMENT_STRUCTURE_BACKEND: 'gold',
+        EVIDENCE_GRAPH_BACKEND: 'gold',
+        PRIVATE_PDF_PREVIEW_ENABLED: 'false',
+        ASSISTANT_BACKEND: 'offline',
         PROJECT_CLAIM_BACKEND: 'memory',
         EXPERIMENT_RUN_BACKEND: 'memory',
       },

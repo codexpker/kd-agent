@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
+import pytest
 
+from app import api as api_module
 from app.main import app
 
 client = TestClient(app)
@@ -34,11 +36,15 @@ def test_unknown_paper_is_404() -> None:
     assert response.status_code == 404
 
 
-def test_structure_does_not_fake_pages() -> None:
+def test_structure_does_not_fake_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: type("Settings", (), {"document_structure_backend": "gold"})(),
+    )
     response = client.get("/api/v1/papers/anomaly-transformer-2022/document-structure")
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "gold_snapshot"
     assert all(item["page"] is None for item in payload["artifacts"])
     assert payload["warnings"]
-
