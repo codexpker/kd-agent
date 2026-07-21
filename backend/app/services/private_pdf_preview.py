@@ -37,6 +37,16 @@ class PrivatePdfPreviewService:
     def __init__(self, preview_root: str) -> None:
         self.preview_root = preview_root
 
+    def verify_source(self, structure: DocumentStructure) -> None:
+        """Verify a renderable hash-matched source without exposing its path."""
+        if structure.source != "parsed_pdf" or not structure.file_sha256:
+            raise PrivatePdfPreviewError("a persisted parsed_pdf structure is required")
+        _find_pdf_by_sha256(self.preview_root, structure.file_sha256)
+        try:
+            import fitz  # noqa: F401
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise PrivatePdfPreviewError("PyMuPDF is unavailable for local preview") from exc
+
     def render_page(
         self,
         structure: DocumentStructure,

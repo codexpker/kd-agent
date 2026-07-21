@@ -11,6 +11,16 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
   expect(health.ok()).toBeTruthy()
   expect(await health.json()).toMatchObject({ status: 'ok', mode: 'offline-ready' })
 
+  const readiness = await request.get(`${backendOrigin}/api/v1/demo/readiness`)
+  expect(readiness.ok()).toBeTruthy()
+  const readinessPayload = await readiness.json()
+  expect(readinessPayload).toMatchObject({
+    schema_version: 'demo-readiness-v1',
+    status: 'ready',
+    runtime_mode: 'offline_demo',
+  })
+  expect(readinessPayload.tour_steps).toHaveLength(5)
+
   const structure = await request.get(
     `${backendOrigin}/api/v1/papers/anomaly-transformer-2022/document-structure`,
   )
@@ -36,7 +46,7 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
 
   await page.goto('/assistant')
   await expect(page.getByTestId('assistant-shell')).toBeVisible()
-  await expect(page.getByText('API 在线 · 离线证据模式', { exact: true })).toBeVisible()
+  await expect(page.getByText('API 在线 · 完全离线模式', { exact: true })).toBeVisible()
   await expect(page.getByTestId('graph-source')).toHaveText('gold_snapshot')
   await expect(page.getByTestId('quick-task-paper')).toBeVisible()
   await expect(page.getByTestId('quick-task-opportunity')).toBeVisible()
@@ -74,6 +84,28 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
   await page.getByRole('button', { name: '论证路径', exact: true }).click()
   await expect(page.getByTestId('paper-evidence-graph')).toContainText('30 节点 / 65 关系')
   await expect(page.getByTestId('graph-path')).toHaveCount(5)
+
+  await page.getByTestId('demo-guide-toggle').click()
+  const guide = page.getByTestId('demo-guide-panel')
+  await expect(guide).toContainText('核心演示可用')
+  await expect(guide).toContainText('完全离线演示')
+  await expect(page.getByTestId('demo-readiness-checks').locator(':scope > article')).toHaveCount(5)
+  await page.getByTestId('start-guided-demo').click()
+  await expect(page.getByTestId('guided-demo-step')).toContainText('先看完整论证链')
+  await page.getByTestId('guided-demo-next').click()
+  await expect(page).toHaveURL(/tab=experiments/)
+  await expect(page.getByTestId('guided-demo-step')).toContainText('再看实验为什么存在')
+  await page.getByTestId('guided-demo-next').click()
+  await expect(page).toHaveURL(/tab=artifacts/)
+  await expect(page.getByTestId('guided-demo-step')).toContainText('阅读真实图表和解释')
+  await page.getByTestId('guided-demo-next').click()
+  await expect(page).toHaveURL(/tab=evidence/)
+  await expect(page.getByTestId('guided-demo-step')).toContainText('检查EvidenceAnchor用途')
+  await page.getByTestId('guided-demo-next').click()
+  await expect(page).toHaveURL(/tab=graph/)
+  await expect(page.getByTestId('guided-demo-step')).toContainText('最后检查论证路径')
+  await page.getByTestId('guided-demo-finish').click()
+  await expect(page.getByTestId('guided-demo-step')).toHaveCount(0)
 
   await page.goto('/workspace')
   await expect(page.getByText('开发种子，不是冻结 Gold', { exact: true })).toBeVisible()

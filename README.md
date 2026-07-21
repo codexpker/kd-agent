@@ -10,6 +10,35 @@
 
 要求：Python 3.11+、Node.js 20+。
 
+安装依赖后，可以用一个命令启动并打开五步演示引导。默认命令保持完全离线、零数据库写入：
+
+```bash
+python -m app.cli.demo_start
+```
+
+已配置Docker、MySQL、Neo4j和本地授权PDF时，显式启用真实基础设施模式：
+
+```bash
+python -m app.cli.demo_start --with-infrastructure
+```
+
+Windows未激活虚拟环境时，可在仓库根目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli.demo_start --with-infrastructure
+```
+
+真实模式会启动MySQL/Neo4j、应用Alembic迁移，并以显式`--commit`幂等同步演示开发种子；不会
+写入或复制PDF。服务启动后打开`/assistant?guide=1`，面板会分别检查语义种子、`parsed_pdf`、
+SHA-256匹配的私有页图、Neo4j关系索引和科研助理语言层。已有服务会被复用；命令只会终止由它
+自己启动的进程。只读检查当前运行环境可使用：
+
+```bash
+python -m app.cli.demo_start --check-only
+```
+
+下面仍保留手工分终端启动方式，便于日常开发调试：
+
 ```bash
 cp .env.example .env
 python -m venv .venv
@@ -29,6 +58,10 @@ npm run dev
 
 访问 <http://localhost:5173>，默认进入“科研助理”对话式工作台；原有完整结构化编辑器移动到
 <http://localhost:5173/workspace>。API 文档位于 <http://localhost:8000/docs>。
+
+前端顶部的“演示引导”会显示当前究竟是“完全离线模式”还是“本地真实链路”，并按“核心链 →
+实验意图 → Figure/Table → EvidenceAnchor → 论证路径”导航。`GET /api/v1/demo/readiness`返回同一份
+机器可读状态；`/healthz`只表示API进程存活，不能替代核心链路就绪检查。
 
 首篇论文逆向工程阅读器位于
 <http://localhost:5173/papers/anomaly-transformer-2022>。它把文档结构、科研叙事链、Claim、实验意图、

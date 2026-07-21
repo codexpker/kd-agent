@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import DemoGuide from './components/DemoGuide.vue'
 
 const route = useRoute()
 const apiReady = ref(false)
+const readinessMode = ref<'offline_demo' | 'local_infrastructure' | null>(null)
+const readinessStatus = ref<'ready' | 'degraded' | 'blocked' | null>(null)
 const paperMode = computed(() => route.path.startsWith('/papers/'))
+const runtimeLabel = computed(() => {
+  if (!apiReady.value) return 'API 未连接'
+  if (readinessMode.value === null) return 'API 在线 · 链路状态未知'
+  if (readinessMode.value === 'local_infrastructure') {
+    return readinessStatus.value === 'ready' ? 'API 在线 · 本地真实链路' : 'API 在线 · 本地链路待修复'
+  }
+  return 'API 在线 · 完全离线模式'
+})
 
 const sectionLabel = computed(() => {
   if (route.path === '/assistant') return '科研助理'
@@ -18,6 +29,17 @@ onMounted(async () => {
   try {
     const response = await fetch('/api/v1/healthz')
     apiReady.value = response.ok
+    if (response.ok) {
+      const readinessResponse = await fetch('/api/v1/demo/readiness')
+      if (readinessResponse.ok) {
+        const readiness = await readinessResponse.json() as {
+          runtime_mode: 'offline_demo' | 'local_infrastructure'
+          status: 'ready' | 'degraded' | 'blocked'
+        }
+        readinessMode.value = readiness.runtime_mode
+        readinessStatus.value = readiness.status
+      }
+    }
   } catch {
     apiReady.value = false
   }
@@ -54,8 +76,11 @@ onMounted(async () => {
     <section class="app-stage">
       <header class="app-header">
         <div><span>当前空间</span><b>{{ sectionLabel }}</b></div>
-        <div class="runtime-status" :class="{ offline: !apiReady }">
-          <i></i>{{ apiReady ? 'API 在线 · 离线证据模式' : 'API 未连接' }}
+        <div class="header-actions">
+          <DemoGuide />
+          <div class="runtime-status" :class="{ offline: !apiReady, warning: apiReady && readinessStatus !== 'ready' }">
+            <i></i>{{ runtimeLabel }}
+          </div>
         </div>
       </header>
       <div class="app-content"><RouterView /></div>
@@ -73,7 +98,8 @@ onMounted(async () => {
 .app-sidebar nav a { display: flex; gap: 11px; align-items: center; padding: 11px 12px; border-radius: 10px; color: #55645c; text-decoration: none; font-size: 13px; font-weight: 700; }
 .app-sidebar nav a span { color: #9da8a2; font-size: 10px; }.app-sidebar nav a:hover { background: #eef2ee; }.app-sidebar nav a.router-link-active { background: #dfeee6; color: #174c38; }.app-sidebar nav a.router-link-active span { color: #ef683e; }
 .integrity-card { margin-top: auto; padding: 15px; border: 1px solid #dfe4df; border-radius: 13px; background: #f1f4ef; }.integrity-card b { font-size: 11px; }.integrity-card p { margin: 7px 0 0; color: #6f7d75; font-size: 10px; line-height: 1.45; }
-.app-stage { min-width: 0; }.app-header { height: 66px; display: flex; justify-content: space-between; align-items: center; padding: 0 28px; border-bottom: 1px solid #dfe4df; background: rgba(251, 252, 250, .94); position: sticky; top: 0; z-index: 15; backdrop-filter: blur(12px); }.app-header > div:first-child { display: grid; }.app-header span { color: #8a968f; font-size: 9px; letter-spacing: 1.3px; }.app-header b { margin-top: 2px; font-size: 14px; }.runtime-status { padding: 7px 10px; border: 1px solid #c8d5cd; border-radius: 99px; color: #52645a; font-size: 10px; }.runtime-status i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #47a76b; }.runtime-status.offline i { background: #e06c47; }
+.app-stage { min-width: 0; }.app-header { height: 66px; display: flex; justify-content: space-between; align-items: center; padding: 0 28px; border-bottom: 1px solid #dfe4df; background: rgba(251, 252, 250, .94); position: sticky; top: 0; z-index: 15; backdrop-filter: blur(12px); }.app-header > div:first-child { display: grid; }.app-header span { color: #8a968f; font-size: 9px; letter-spacing: 1.3px; }.app-header b { margin-top: 2px; font-size: 14px; }.runtime-status { padding: 7px 10px; border: 1px solid #c8d5cd; border-radius: 99px; color: #52645a; font-size: 10px; }.runtime-status i { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #47a76b; }.runtime-status.warning i { background: #d69227; }.runtime-status.offline i { background: #e06c47; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
 .app-content { min-width: 0; }
 .app-shell.paper-mode { grid-template-columns: 76px minmax(0, 1fr); }
 .paper-mode .app-sidebar { padding: 18px 9px; }

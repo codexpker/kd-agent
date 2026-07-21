@@ -137,6 +137,12 @@
   - [x] 图表页签直接展示5张真实Figure/Table摘图，并以确定性规则组合ArtifactRole、ExperimentIntent、Claim和Boundary，说明“回答什么、为何用图/表、参与支撑什么、不能推出什么”，不依赖模型补造解释。
   - [x] EvidenceAnchor总览增加Claim、实验、图表和叙事动作四类用途；关系页改为可读的`Claim → 实验/图表 → EvidenceAnchor`论证路径，并明确Neo4j只是可重建索引、有关系不等于已人工确认。
   - [x] 将含糊的`development_seed`用户标签改为“开发种子 · 未经双审”，明确它可用于结构学习但不是论文原句、正式引用或冻结Gold，也不要求普通用户进入数据库复核。
+- [x] 建立可解释的演示启动与首次使用引导闭环。
+  - [x] 新增`GET /api/v1/demo/readiness`，分别报告语义种子、文档结构、SHA-256匹配私有PDF、论证关系索引和语言层；`healthz`只表示API存活，不再被当作核心链路就绪证据。
+  - [x] 离线模式明确以`gold_snapshot`和本地规则完成零外部依赖演示；真实模式要求MySQL `parsed_pdf`、可渲染私有副本和Neo4j均闭合，缺失项返回`degraded/blocked`及修复动作。
+  - [x] 新增跨平台`python -m app.cli.demo_start`：默认零数据库写入；只有显式`--with-infrastructure`才启动MySQL/Neo4j、迁移并幂等同步开发种子，已有服务安全复用。
+  - [x] 前端顶部显示“完全离线模式”或“本地真实链路”，提供五步演示向导，依次导航核心链、实验意图、真实图表、EvidenceAnchor用途和Claim论证路径。
+  - [x] 单元、Vue生产构建、离线Playwright和真实基础设施Playwright均覆盖就绪状态与向导；星辰仍为可选语言层，不因未配置而伪报核心链路失败。
 - [x] 建立论文拆解会话、工具运行历史和星辰真实协议适配基础闭环（不代表星辰线上调用已验证）。
   - [x] 新增创建/读取会话与发送消息API，保存`session_id`、`trace_id`、提示词版本、消息来源、EvidenceAnchor和实际工具运行；当前明确为`process_memory`，API重启后清空。
   - [x] 本轮只编排`paper_deconstruct`、`document_structure`和`evidence_graph`，工具选择由可测试的服务端规则完成，不宣称模型已自主规划工具。

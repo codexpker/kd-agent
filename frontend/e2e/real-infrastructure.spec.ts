@@ -7,6 +7,23 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
   const health = await request.get(`${backendOrigin}/api/v1/healthz`)
   expect(health.ok()).toBeTruthy()
 
+  const readinessResponse = await request.get(`${backendOrigin}/api/v1/demo/readiness`)
+  expect(readinessResponse.ok()).toBeTruthy()
+  const readiness = await readinessResponse.json()
+  expect(readiness).toMatchObject({
+    status: 'ready',
+    runtime_mode: 'local_infrastructure',
+  })
+  const readinessChecks = Object.fromEntries(
+    readiness.checks.map((item: { check_id: string; status: string }) => [item.check_id, item.status]),
+  )
+  expect(readinessChecks).toMatchObject({
+    document_structure: 'ready',
+    private_pdf_preview: 'ready',
+    evidence_graph: 'ready',
+    assistant_backend: 'ready',
+  })
+
   const structureResponse = await request.get(
     `${backendOrigin}/api/v1/papers/${paperId}/document-structure`,
   )
@@ -64,6 +81,7 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
 
   await page.goto(`/papers/${paperId}`)
   await expect(page.getByTestId('paper-reader')).toBeVisible()
+  await expect(page.getByText('API 在线 · 本地真实链路', { exact: true })).toBeVisible()
   await expect(page.getByTestId('reader-integrity')).toContainText('开发种子 · 未经双审')
   const status = page.getByTestId('core-service-status')
   await expect(status).toContainText('20 页')
@@ -71,6 +89,14 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
   await expect(status).toContainText('30/65')
   await expect(status).toContainText('neo4j')
   await expect(page.getByTestId('core-chain-stage')).toHaveCount(9)
+
+  await page.getByTestId('demo-guide-toggle').click()
+  const guide = page.getByTestId('demo-guide-panel')
+  await expect(guide).toContainText('核心演示可用')
+  await expect(guide).toContainText('本地真实基础设施')
+  await expect(guide).toContainText('授权本地副本与MySQL中的SHA-256匹配')
+  await expect(guide).toContainText('Neo4j真实返回30个节点和65条关系')
+  await page.getByRole('button', { name: '关闭演示引导' }).click()
 
   const pdfImage = page.getByTestId('pdf-viewer-canvas').locator('img')
   await expect(pdfImage).toBeVisible()

@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
 from fastapi.responses import FileResponse, Response
 
 from app.config import get_settings
+from app.demo_models import DemoReadinessResponse
 from app.assistant_models import (
     AssistantMessageRequest,
     AssistantSession,
@@ -40,6 +41,7 @@ from app.experiment_run_models import (
 from app.research_models import ResearchOpportunityRequest, ResearchOpportunityResponse
 from app.research_planning_models import ResearchCoachResponse, ResearchPlanRequest
 from app.services.deconstruction import DeconstructionService, PaperNotFoundError
+from app.services.demo_readiness import DemoReadinessService
 from app.services.assistant_sessions import (
     AssistantSessionConflictError,
     AssistantSessionNotFoundError,
@@ -209,6 +211,26 @@ def _experiment_run_backend_errors() -> tuple[type[BaseException], ...]:
 @router.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok", "mode": "offline-ready"}
+
+
+@router.get("/demo/readiness", response_model=DemoReadinessResponse)
+def demo_readiness() -> DemoReadinessResponse:
+    settings = get_settings()
+
+    def private_pdf_probe(structure: DocumentStructure) -> None:
+        if not settings.private_pdf_preview_enabled:
+            raise RuntimeError("private PDF preview is disabled")
+        PrivatePdfPreviewService(settings.private_pdf_preview_root).verify_source(
+            structure
+        )
+
+    return DemoReadinessService(
+        get_gold_dataset(),
+        settings,
+        document_loader=document_structure,
+        graph_loader=evidence_graph,
+        private_pdf_probe=private_pdf_probe,
+    ).get()
 
 
 @router.post("/tools/search", response_model=SearchResponse)
