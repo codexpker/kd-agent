@@ -119,6 +119,15 @@ const selectedEvidence = computed(() => (
     ? evidenceById.value.get(selectedNode.value.local_id) ?? null
     : null
 ))
+const selectedEvidenceUsage = computed(() => {
+  const id = selectedEvidence.value?.id
+  if (!id || !paper.value) return { claims: [], experiments: [], artifacts: [] }
+  return {
+    claims: paper.value.claims.filter((item) => item.evidence_ids.includes(id)),
+    experiments: paper.value.experiment_intents.filter((item) => item.evidence_ids.includes(id)),
+    artifacts: paper.value.artifacts.filter((item) => item.evidence_ids.includes(id)),
+  }
+})
 const assistantRuntimeLabel = computed(() => {
   if (!assistantSession.value) return '服务端模式待确认'
   if (assistantSession.value.backend === 'offline') return '离线规则 · 本地证据工具'
@@ -441,10 +450,18 @@ onMounted(async () => {
 
         <div v-if="sidePanel === 'evidence'" class="evidence-panel">
           <template v-if="selectedEvidence">
-            <div class="selection-label"><span>{{ selectedEvidence.kind }}</span><b>{{ selectedEvidence.verified ? '已人工核验' : '开发注释待复核' }}</b></div>
+            <div class="selection-label"><span>{{ selectedEvidence.kind }}</span><b>{{ selectedEvidence.verified ? '已人工核验' : '语义解读未经双审' }}</b></div>
             <h3>{{ selectedEvidence.label }}</h3>
             <blockquote>{{ selectedEvidence.excerpt }}</blockquote>
-            <p>这是中文开发注释，不是论文原句；真实自动解析页图请在论文逆向工程阅读器中查看。</p>
+            <section class="assistant-evidence-usage" data-testid="assistant-evidence-usage">
+              <b>这条证据在论证中做什么</b>
+              <dl>
+                <div><dt>参与支撑</dt><dd>{{ selectedEvidenceUsage.claims.map((item) => `${item.id} · ${item.statement}`).join('；') || '通过实验或图表间接关联' }}</dd></div>
+                <div><dt>对应实验</dt><dd>{{ selectedEvidenceUsage.experiments.map((item) => `${item.id} · ${item.title}`).join('；') || '没有直接实验关系' }}</dd></div>
+                <div><dt>对应图表</dt><dd>{{ selectedEvidenceUsage.artifacts.map((item) => `${item.id} · ${item.label} ${item.role}`).join('；') || '没有直接图表关系' }}</dd></div>
+              </dl>
+            </section>
+            <p>这是中文开发转述，不是论文原句或正式引用。你不需要进入数据库逐条复核；当前可在论文阅读器查看真实摘图和原页，正式审核入口仍待建设。</p>
           </template>
           <template v-else>
             <h3>{{ selectedNode?.label ?? '证据检查器' }}</h3>
@@ -452,13 +469,14 @@ onMounted(async () => {
           </template>
           <div class="evidence-list">
             <button v-for="item in paper?.evidence.slice(0, 6)" :key="item.id" @click="selectEvidence(item)">
-              <span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ item.verified ? '已人工核验' : '开发注释待复核' }}</small></div>
+              <span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ item.kind }} · {{ item.verified ? '已人工核验' : '待双审' }}</small></div>
             </button>
           </div>
           <RouterLink :to="`/papers/${paperId}`" data-testid="open-paper-reader">打开论文逆向工程阅读器 →</RouterLink>
         </div>
 
         <div v-else class="graph-panel">
+          <p class="graph-purpose"><b>这不是论文实体总览。</b>它只检查当前Claim是否经过实验/图表并落到EvidenceAnchor；Neo4j负责快速重建关系，不能替代证据内容。</p>
           <div class="graph-legend"><span class="claim">Claim</span><span class="work">Experiment / Artifact</span><span class="evidence">Evidence</span></div>
           <div class="assistant-graph-focus"><b>只查看一个 Claim 的证据闭环</b><button v-for="claim in paper?.claims" :key="claim.id" :class="{ active: focusedClaimId === claim.id }" @click="focusGraphClaim(claim.id)">{{ claim.id }}</button></div>
           <div class="graph-paths" data-testid="evidence-graph">
@@ -469,7 +487,7 @@ onMounted(async () => {
             <article v-for="path in focusedGraph.paths" :key="path.work.node_id" class="graph-path-card" data-testid="assistant-graph-path">
               <header><span>{{ path.work.node_type === 'experiment' ? '实验' : '图表' }}</span><b>{{ path.work.local_id }} · {{ path.work.label }}</b></header>
               <p>{{ path.work.summary }}</p>
-              <div class="path-relation"><i>支撑当前 Claim</i><span>→</span><i>依据 {{ path.evidence.length }} 条 EvidenceAnchor</i></div>
+              <div class="path-relation"><i>{{ path.work.node_type === 'experiment' ? '用实验检验当前Claim' : '用图表承载论证' }}</i><span>→</span><i>落到 {{ path.evidence.length }} 条可定位证据</i></div>
               <div class="path-evidence"><button v-for="evidence in path.evidence" :key="evidence.node_id" @click="selectedNode = evidence; sidePanel = 'evidence'">{{ evidence.local_id }} · {{ evidence.label }}</button></div>
             </article>
             <article class="direct-evidence-card">
@@ -495,6 +513,7 @@ onMounted(async () => {
 .tool-run-log { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e4e9e5; }.tool-run-log > p { margin: 0 0 3px; color: #8c9992; font-size: 8px; font-weight: 900; letter-spacing: 1.2px; }.tool-run-log article { display: grid; grid-template-columns: 54px 1fr; gap: 8px; padding: 8px; border-radius: 8px; background: #eef4f0; }.tool-run-log article > span { align-self: start; padding: 4px 5px; border-radius: 99px; background: #d8eadf; color: #26704c; font-size: 7px; font-weight: 900; text-align: center; text-transform: uppercase; }.tool-run-log article div { display: grid; gap: 2px; }.tool-run-log article b { font-size: 9px; }.tool-run-log article small { color: #7b8881; font-size: 8px; line-height: 1.4; }.task-status > footer { display: grid; gap: 3px; margin-top: 12px; padding: 10px 0 0; border-top: 1px solid #e4e9e5; background: transparent; font-weight: normal; }.task-status > footer span { overflow: hidden; color: #315d49; font-size: 8px; font-family: monospace; text-overflow: ellipsis; white-space: nowrap; }.task-status > footer small { color: #89958e; font-size: 7px; }
 .evidence-inspector { margin-top: 16px; overflow: hidden; }.evidence-inspector > header { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #e4e9e5; }.evidence-inspector > header button { padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: #718078; font-size: 11px; font-weight: 800; }.evidence-inspector > header button.active { background: #dfeee6; color: #205c45; }.evidence-inspector > header span { margin-left: auto; padding: 5px 7px; border: 1px solid #d4ddd7; border-radius: 99px; color: #6d7a72; font-size: 8px; }.evidence-panel, .graph-panel { padding: 18px; }.selection-label { display: flex; justify-content: space-between; }.selection-label span, .selection-label b { padding: 5px 7px; border-radius: 99px; background: #eef2ee; font-size: 8px; }.selection-label b { background: #ffe6dc; color: #a34224; }.evidence-panel h3 { margin: 14px 0 8px; font-size: 17px; line-height: 1.35; }.evidence-panel > p { color: #718078; font-size: 10px; line-height: 1.5; }.evidence-panel blockquote { margin: 13px 0; padding: 12px; border-left: 3px solid #ef683e; background: #f5f6f2; color: #43544b; font: 13px/1.6 Georgia,serif; }.evidence-list { display: grid; gap: 5px; margin: 17px 0; }.evidence-list button { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 9px; border: 1px solid #e1e6e2; border-radius: 8px; background: white; text-align: left; }.evidence-list button > span { color: #ef683e; font-size: 9px; font-weight: 900; }.evidence-list button div { display: grid; gap: 2px; }.evidence-list b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.evidence-list small { color: #909b94; font-size: 8px; }.evidence-panel > a { color: #205c45; font-size: 10px; font-weight: 800; text-decoration: none; }
 .graph-legend { display: flex; flex-wrap: wrap; gap: 5px; }.graph-legend span { padding: 4px 6px; border-radius: 99px; font-size: 8px; }.graph-legend .claim { background: #dfff43; }.graph-legend .work { background: #ffd7c9; }.graph-legend .evidence { background: #dce8ff; }.assistant-graph-focus { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 10px; padding: 9px; border-radius: 8px; background: #f1f5f2; }.assistant-graph-focus b { margin-right: 5px; color: #66766d; font-size: 8px; }.assistant-graph-focus button { padding: 5px 7px; border: 1px solid #cbd6cf; border-radius: 99px; background: white; color: #52645a; font-size: 8px; }.assistant-graph-focus button.active { border-color: #205c45; background: #205c45; color: white; }.graph-paths { display: grid; gap: 8px; max-height: 520px; margin-top: 12px; overflow-y: auto; }.focused-claim-card, .graph-path-card, .direct-evidence-card { padding: 11px; border: 1px solid #dfe6e1; border-radius: 9px; background: #fbfcfb; }.focused-claim-card { border-color: #bdd75c; background: #f6ffd2; }.focused-claim-card small { display: block; color: #698024; font-size: 8px; }.focused-claim-card b { display: block; margin-top: 5px; color: #344218; font-size: 10px; line-height: 1.45; }.graph-path-card header { display: flex; gap: 7px; align-items: center; }.graph-path-card header span { padding: 4px 6px; border-radius: 5px; background: #ffe3d9; color: #91482e; font-size: 7px; }.graph-path-card header b { font-size: 9px; }.graph-path-card > p { margin: 7px 0; color: #66756d; font-size: 8px; line-height: 1.45; }.graph-path-card .path-relation { display: flex; gap: 5px; align-items: center; color: #718078; }.graph-path-card .path-relation i { font-size: 7px; font-style: normal; }.graph-path-card .path-evidence, .direct-evidence-card { display: flex; flex-wrap: wrap; gap: 5px; }.graph-path-card .path-evidence { margin-top: 8px; }.graph-path-card .path-evidence button, .direct-evidence-card button { padding: 5px 6px; border: 1px solid #bbc9df; border-radius: 6px; background: #edf2fc; color: #49617e; font-size: 7px; }.direct-evidence-card > b { width: 100%; color: #607268; font-size: 8px; }.graph-panel > p { color: #718078; font-size: 9px; line-height: 1.45; }.graph-warning { padding-left: 8px; border-left: 2px solid #ef683e; }
+.assistant-evidence-usage { padding: 11px; border: 1px solid #d8e1db; border-radius: 8px; background: #f7faf8; }.assistant-evidence-usage > b { color: #285f48; font-size: 11px; }.assistant-evidence-usage dl { margin: 8px 0 0; }.assistant-evidence-usage dl > div { display: grid; grid-template-columns: 72px 1fr; gap: 7px; padding: 7px 0; border-top: 1px solid #e3e9e5; }.assistant-evidence-usage dt { color: #738178; font-size: 9px; font-weight: 800; }.assistant-evidence-usage dd { margin: 0; color: #30463b; font-size: 10px; line-height: 1.5; }.graph-panel > p.graph-purpose { margin-top: 0; padding: 10px; border-left: 3px solid #2d7556; background: #edf5f0; color: #4f665a; font-size: 10px; line-height: 1.55; }.graph-purpose b { color: #244f3b; }
 @media (max-width: 1250px) { .assistant-view { grid-template-columns: 1fr; }.research-inspector { display: grid; grid-template-columns: .8fr 1.2fr; gap: 15px; border-left: 0; border-top: 1px solid #dfe4df; }.evidence-inspector { margin-top: 0; }.quick-task-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 720px) { .assistant-main { padding: 30px 18px 45px; }.assistant-hero { display: grid; }.quick-task-grid, .research-inspector { grid-template-columns: 1fr; }.research-inspector { padding: 18px; }.message-list article { max-width: 95%; } }
 </style>

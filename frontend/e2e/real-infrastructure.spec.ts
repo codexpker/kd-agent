@@ -55,10 +55,16 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
     const bytes = await preview.body()
     expect(bytes.subarray(1, 4).toString()).toBe('PNG')
   }
+  const excerpt = await request.get(
+    `${backendOrigin}/api/v1/papers/${paperId}/document-preview/artifacts/art-1/excerpt`,
+  )
+  expect(excerpt.ok()).toBeTruthy()
+  expect(excerpt.headers()['x-kd-preview-scope']).toBe('derived-reading-excerpt')
+  expect((await excerpt.body()).subarray(1, 4).toString()).toBe('PNG')
 
   await page.goto(`/papers/${paperId}`)
   await expect(page.getByTestId('paper-reader')).toBeVisible()
-  await expect(page.getByTestId('reader-integrity')).toContainText('自动解析，尚未双审')
+  await expect(page.getByTestId('reader-integrity')).toContainText('开发种子 · 未经双审')
   const status = page.getByTestId('core-service-status')
   await expect(status).toContainText('20 页')
   await expect(status).toContainText('10/10')
@@ -71,17 +77,27 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
   await expect.poll(() => pdfImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
   expect(await pdfImage.evaluate((image: HTMLImageElement) => image.getBoundingClientRect().width)).toBeGreaterThanOrEqual(580)
 
+  await page.getByRole('button', { name: '图表', exact: true }).click()
+  await expect(page.getByTestId('artifact-preview-image')).toHaveCount(5)
+  const figurePreview = page.locator('[data-testid="artifact-preview-image"][data-artifact-id="ar-1"]')
+  await expect(figurePreview).toBeVisible()
+  await expect.poll(() => figurePreview.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+  await expect(page.getByTestId('artifact-roles')).toContainText('它回答什么')
+  await expect(page.getByTestId('artifact-roles')).toContainText('不能据此断言')
+
   await page.getByRole('button', { name: '证据', exact: true }).click()
   const figureAnchor = page.locator('.anchor-catalog button').filter({ hasText: 'ev-3' })
   await figureAnchor.click()
   await expect(page.getByTestId('evidence-inspector')).toContainText('Figure 1 · 第 4 页')
   await expect(page.getByTestId('evidence-inspector')).toContainText('客观版面层')
+  await expect(page.getByTestId('evidence-usage')).toContainText('参与支撑的Claim')
+  await expect(page.getByTestId('evidence-usage')).toContainText('对应图表')
   await expect(page.locator('.page-controls')).toContainText('第 4 / 20 页')
   await expect(page.locator('.preview-status')).toContainText('Figure 1')
   await expect(pdfImage).toHaveAttribute('src', /document-preview\/artifacts\/art-1/)
   await expect.poll(() => pdfImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
 
-  await page.getByRole('button', { name: 'Neo4j 路径', exact: true }).click()
+  await page.getByRole('button', { name: '论证路径', exact: true }).click()
   const graphPanel = page.getByTestId('paper-evidence-graph')
   await expect(graphPanel).toContainText('neo4j')
   await expect(graphPanel).toContainText('30 节点 / 65 关系')

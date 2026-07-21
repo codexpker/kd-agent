@@ -34,6 +34,10 @@ npm run dev
 <http://localhost:5173/papers/anomaly-transformer-2022>。它把文档结构、科研叙事链、Claim、实验意图、
 Figure/Table角色和EvidenceAnchor放在同一审核界面。当前默认数据是`development_seed + gold_snapshot`：
 没有已登记的授权解析结果时，页面不会分发原PDF，也不会显示伪造页码、图注、bbox或正文引用。
+`development_seed`在前端显示为“开发种子 · 未经双审”，表示语义解释可以用于学习和演示，但不能
+直接当作论文原句、正式引用或冻结Gold；它不是要求普通用户进入数据库逐条确认。真实解析模式下，
+图表页签会从SHA-256匹配的本地私有PDF即时渲染阅读摘图，并按结构化规则说明它回答什么、为何使用
+Figure/Table、参与支撑哪个Claim以及不能推出什么。摘图窗口不写数据库、不作为解析bbox真值。
 
 科研助理首页使用自然语言和四类任务卡导航现有科研工具。论文问答会创建带`trace_id`的进程内
 会话，并记录实际调用的本地工具、来源和EvidenceAnchor；默认`ASSISTANT_BACKEND=offline`，明确显示
@@ -42,7 +46,8 @@ Figure/Table角色和EvidenceAnchor放在同一审核界面。当前默认数据
 
 默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把开发种子冒充
 Neo4j查询结果。安装基础设施依赖、启动Neo4j并将该配置改为`neo4j`后，右侧关系图改为读取真实
-Neo4j可重建索引；MySQL仍是权威事实源。
+Neo4j可重建索引；MySQL仍是权威事实源。前端将索引解释为`Claim → Experiment/Figure/Table →
+EvidenceAnchor`论证路径，而不是没有阅读目的的实体大图。
 
 ## 验证
 

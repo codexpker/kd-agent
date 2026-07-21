@@ -753,6 +753,14 @@ def _private_preview_response(payload: bytes, structure: DocumentStructure) -> R
     )
 
 
+def _private_artifact_excerpt_response(
+    payload: bytes, structure: DocumentStructure
+) -> Response:
+    response = _private_preview_response(payload, structure)
+    response.headers["X-KD-Preview-Scope"] = "derived-reading-excerpt"
+    return response
+
+
 @router.get("/papers/{paper_id}/document-preview/pages/{page_number}")
 def document_preview_page(paper_id: str, page_number: int) -> Response:
     structure, settings = _private_preview_structure(paper_id)
@@ -782,6 +790,26 @@ def document_preview_artifact(paper_id: str, artifact_id: str) -> Response:
     except PrivatePdfPreviewError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _private_preview_response(payload, structure)
+
+
+@router.get("/papers/{paper_id}/document-preview/artifacts/{artifact_id}/excerpt")
+def document_preview_artifact_excerpt(paper_id: str, artifact_id: str) -> Response:
+    structure, settings = _private_preview_structure(paper_id)
+    artifact = next((item for item in structure.artifacts if item.id == artifact_id), None)
+    if artifact is None or artifact.page is None:
+        raise HTTPException(status_code=404, detail="No parsed artifact preview")
+    try:
+        payload = PrivatePdfPreviewService(settings.private_pdf_preview_root).render_page(
+            structure,
+            artifact.page,
+            artifact,
+            artifact_excerpt=True,
+        )
+    except PrivatePdfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PrivatePdfPreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _private_artifact_excerpt_response(payload, structure)
 
 
 @router.get("/papers/{paper_id}/document-preview/sections/{section_id}")

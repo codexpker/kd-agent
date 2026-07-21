@@ -105,6 +105,7 @@ const previewLoading = ref(false)
 const previewError = ref('')
 const viewerZoom = ref(100)
 const outlineOpen = ref(false)
+const brokenArtifactPreviews = ref(new Set<string>())
 
 const normalizeLabel = (value: string) => value.toLowerCase().replace(/[：:]/g, '').replace(/\s+/g, ' ').trim()
 const evidenceById = computed(() => new Map((paper.value?.evidence ?? []).map((item) => [item.id, item])))
@@ -113,6 +114,16 @@ const selectedEvidence = computed(() => selectedEvidenceId.value ? evidenceById.
 const focusedClaim = computed(() => focusedClaimId.value ? claimById.value.get(focusedClaimId.value) ?? null : null)
 const verifiedEvidenceCount = computed(() => paper.value?.evidence.filter((item) => item.verified).length ?? 0)
 const sourceLabel = computed(() => structure.value?.source === 'parsed_pdf' ? '真实 PDF 自动解析' : 'Gold 结构快照')
+const reviewStatusLabel = computed(() => {
+  if (paper.value?.status === 'frozen') return '双审仲裁完成'
+  if (paper.value?.status === 'double_annotated') return '双人标注 · 待仲裁'
+  return '开发种子 · 未经双审'
+})
+const boundarySummary = computed(() => (
+  paper.value?.claims.find((item) => item.claim_type === 'boundary')?.statement
+  ?? paper.value?.limitations[0]
+  ?? '当前记录没有足够信息支持超出论文评测范围的结论。'
+))
 
 function matchLayoutArtifact(evidence: Evidence | null) {
   if (!evidence || structure.value?.source !== 'parsed_pdf') return null
@@ -131,6 +142,16 @@ const selectedLayoutSection = computed(() => matchLayoutSection(selectedEvidence
 const selectedLayoutReferences = computed(() => {
   if (!selectedLayoutArtifact.value || !structure.value) return []
   return structure.value.references.filter((item) => item.artifact_id === selectedLayoutArtifact.value?.id)
+})
+const selectedEvidenceUsage = computed(() => {
+  const id = selectedEvidence.value?.id
+  if (!id || !paper.value) return { moves: [], claims: [], experiments: [], artifacts: [] }
+  return {
+    moves: paper.value.narrative_moves.filter((item) => item.evidence_ids.includes(id)),
+    claims: paper.value.claims.filter((item) => item.evidence_ids.includes(id)),
+    experiments: paper.value.experiment_intents.filter((item) => item.evidence_ids.includes(id)),
+    artifacts: paper.value.artifacts.filter((item) => item.evidence_ids.includes(id)),
+  }
 })
 const linkedEvidenceCount = computed(() => paper.value?.evidence.filter((item) => matchLayoutArtifact(item) || matchLayoutSection(item)).length ?? 0)
 const previewUrl = computed(() => {
@@ -201,6 +222,50 @@ function claimsFor(ids: string[]) {
     const item = claimById.value.get(id)
     return item ? [item] : []
   })
+}
+
+function parsedArtifactFor(artifact: Artifact) {
+  if (structure.value?.source !== 'parsed_pdf') return null
+  return structure.value.artifacts.find(
+    (item) => normalizeLabel(item.label) === normalizeLabel(artifact.label),
+  ) ?? null
+}
+
+function artifactExcerptUrl(artifact: Artifact) {
+  const parsed = parsedArtifactFor(artifact)
+  if (!parsed || brokenArtifactPreviews.value.has(artifact.id)) return ''
+  return `/api/v1/papers/${encodeURIComponent(paperId.value)}/document-preview/artifacts/${encodeURIComponent(parsed.id)}/excerpt`
+}
+
+function artifactPreviewFailed(artifactId: string) {
+  brokenArtifactPreviews.value = new Set([...brokenArtifactPreviews.value, artifactId])
+}
+
+function artifactQuestion(artifact: Artifact) {
+  const exact = paper.value?.experiment_intents.find((item) => (
+    item.evidence_ids.some((id) => artifact.evidence_ids.includes(id))
+  ))
+  if (exact) return exact.question
+  if (artifact.artifact_type === 'table') return `哪些可比较数值能够检验“${artifact.role}”？`
+  return `读者需要从${artifact.label}中看懂哪些结构、过程或模式？`
+}
+
+function artifactFormatReason(artifact: Artifact) {
+  if (artifact.artifact_type === 'table') {
+    return '表格适合核对多个方法、数据集或指标的精确值；它强调可比较性，不擅长表达连续趋势。'
+  }
+  return '图适合展示模块关系、训练过程或视觉模式；它帮助理解机制，但不能替代定量对照。'
+}
+
+function evidenceKindLabel(kind: Evidence['kind']) {
+  return ({
+    section: '章节', sentence: '句子', figure: '图', table: '表', caption: '图注', reference: '引用',
+  } as Record<Evidence['kind'], string>)[kind]
+}
+
+function graphEntityExplanation(node: GraphNode) {
+  if (node.node_type === 'experiment') return '用实验设计检验当前Claim，而不是直接把结果写成结论。'
+  return '把方法、结果或案例组织成读者可以审核的Figure/Table。'
 }
 
 function routeTab(value: unknown): ReaderTab {
@@ -346,7 +411,7 @@ onMounted(loadReader)
       <div class="paper-identity">
         <div class="reader-breadcrumb"><RouterLink to="/assistant">科研助理</RouterLink><span>/</span><b>论文逆向工程</b></div>
         <template v-if="paper">
-          <div class="status-line"><span>{{ paper.venue }} {{ paper.year }}</span><span class="status-pill warning">{{ paper.status }}</span><span class="status-pill">{{ sourceLabel }}</span></div>
+          <div class="status-line"><span>{{ paper.venue }} {{ paper.year }}</span><span class="status-pill warning">{{ reviewStatusLabel }}</span><span class="status-pill">{{ sourceLabel }}</span></div>
           <h1>{{ paper.title }}</h1>
         </template>
       </div>
@@ -363,9 +428,9 @@ onMounted(loadReader)
 
     <template v-else-if="paper && structure">
       <section class="reader-integrity" data-testid="reader-integrity">
-        <b>{{ structure.source === 'parsed_pdf' ? '自动解析，尚未双审' : '无授权解析结果' }}</b>
+        <b>{{ structure.source === 'parsed_pdf' ? reviewStatusLabel : '无授权解析结果' }}</b>
         <p v-if="structure.source === 'gold_snapshot'">只展示不会伪造位置的结构快照；页码、bbox、真实图注和正文引用保持为空。</p>
-        <p v-else>{{ structure.parser_name }} {{ structure.parser_version }} 提供客观版面事实；中文解释是开发注释，不是论文原句或冻结 Gold。</p>
+        <p v-else>{{ structure.parser_name }} {{ structure.parser_version }} 提供客观版面事实；中文解释可用于学习论文结构，但不是论文原句或正式引用。当前没有要求你操作数据库复核，后续审核应在前端标注工作台完成。</p>
         <span>已核验 {{ verifiedEvidenceCount }}/{{ paper.evidence.length }}</span>
       </section>
 
@@ -423,7 +488,7 @@ onMounted(loadReader)
             <button :class="{ active: activeTab === 'experiments' }" @click="setActiveTab('experiments')">实验</button>
             <button :class="{ active: activeTab === 'artifacts' }" @click="setActiveTab('artifacts')">图表</button>
             <button :class="{ active: activeTab === 'evidence' }" @click="setActiveTab('evidence')">证据</button>
-            <button :class="{ active: activeTab === 'graph' }" @click="setActiveTab('graph')">Neo4j 路径</button>
+            <button :class="{ active: activeTab === 'graph' }" @click="setActiveTab('graph')">论证路径</button>
           </nav>
 
           <section v-if="activeTab === 'chain'" class="chain-view" data-testid="core-evidence-chain">
@@ -436,7 +501,7 @@ onMounted(loadReader)
             </div>
 
             <section class="claim-focus">
-              <header><b>选择要解释的 Claim</b><span>实验、图表、EvidenceAnchor 与 Neo4j 路径会一起变化</span></header>
+              <header><b>选择要解释的 Claim</b><span>实验、图表、EvidenceAnchor 与论证路径会一起变化</span></header>
               <div><button v-for="claim in paper.claims" :key="claim.id" :class="{ active: focusedClaimId === claim.id }" @click="focusClaim(claim.id)"><small>{{ claim.id }} · {{ claim.claim_type }}</small><span>{{ claim.statement }}</span></button></div>
             </section>
 
@@ -457,20 +522,46 @@ onMounted(loadReader)
           </section>
 
           <section v-else-if="activeTab === 'artifacts'" class="card-view" data-testid="artifact-roles">
-            <header class="view-heading"><div><small>FIGURE / TABLE ROLE</small><h2>图表承担什么论证作用</h2></div><span>{{ focusedClaimId }}</span></header>
-            <p class="view-note">已根据真实 PDF 校正演示涉及的 Figure/Table 标签；角色仍是待双人复核的开发注释。</p>
-            <article v-for="artifact in paper.artifacts" :key="artifact.id" :class="{ muted: !claimIsRelevant(artifact.supports_claim_ids) }">
-              <div class="artifact-mark" :class="artifact.artifact_type"><small>{{ artifact.artifact_type }}</small><b>{{ artifact.label }}</b><button v-if="structure.source === 'parsed_pdf'" @click="showSemanticArtifact(artifact)">定位原页</button></div><div class="card-body"><h3>{{ artifact.role }}</h3><dl><div><dt>为什么放在这里</dt><dd>{{ artifact.why_here }}</dd></div><div><dt>支持 Claim</dt><dd><button v-for="claim in claimsFor(artifact.supports_claim_ids)" :key="claim.id" @click="focusClaim(claim.id)">{{ claim.id }} · {{ claim.claim_type }}</button></dd></div></dl><div class="anchor-row"><button v-for="anchor in evidenceFor(artifact.evidence_ids)" :key="anchor.id" @click="inspectEvidence(anchor.id)">{{ anchor.id }} · {{ anchor.label }}</button></div></div>
+            <header class="view-heading"><div><small>FIGURE / TABLE READING</small><h2>看图表，也看它为什么存在</h2></div><span>规则化解释 · {{ focusedClaimId }}</span></header>
+            <p class="view-note">摘图来自本地授权PDF的即时渲染，不写数据库、不提交Git；裁剪窗口只用于阅读，不冒充Gold bbox。下面的解释由结构化Claim、Experiment和EvidenceAnchor组合，不依赖大模型生成。</p>
+            <article v-for="artifact in paper.artifacts" :key="artifact.id" class="artifact-card" :class="{ muted: !claimIsRelevant(artifact.supports_claim_ids) }">
+              <div class="artifact-visual" :class="artifact.artifact_type">
+                <img v-if="artifactExcerptUrl(artifact)" :src="artifactExcerptUrl(artifact)" :alt="`${artifact.label} 本地私有阅读摘图`" data-testid="artifact-preview-image" :data-artifact-id="artifact.id" @error="artifactPreviewFailed(artifact.id)" />
+                <div v-else class="artifact-mark" :class="artifact.artifact_type"><small>{{ artifact.artifact_type }}</small><b>{{ artifact.label }}</b></div>
+                <footer><div><small>本地即时阅读摘图</small><b>{{ artifact.label }}</b></div><button v-if="structure.source === 'parsed_pdf'" @click="showSemanticArtifact(artifact)">在左侧看整页</button></footer>
+              </div>
+              <div class="card-body artifact-explanation">
+                <header><small>{{ artifact.artifact_type === 'figure' ? 'FIGURE' : 'TABLE' }} · {{ artifact.id }}</small><h3>{{ artifact.role }}</h3></header>
+                <dl>
+                  <div><dt>它回答什么</dt><dd>{{ artifactQuestion(artifact) }}</dd></div>
+                  <div><dt>为什么用{{ artifact.artifact_type === 'figure' ? '图' : '表' }}</dt><dd>{{ artifactFormatReason(artifact) }}</dd></div>
+                  <div><dt>为何放在这里</dt><dd>{{ artifact.why_here }}</dd></div>
+                  <div><dt>参与支撑</dt><dd><button v-for="claim in claimsFor(artifact.supports_claim_ids)" :key="claim.id" @click="focusClaim(claim.id)">{{ claim.id }} · {{ claim.statement }}</button></dd></div>
+                  <div class="cannot-prove"><dt>不能据此断言</dt><dd>{{ boundarySummary }}</dd></div>
+                </dl>
+                <div class="anchor-row"><button v-for="anchor in evidenceFor(artifact.evidence_ids)" :key="anchor.id" @click="inspectEvidence(anchor.id)">{{ anchor.id }} · 查看证据用途与原页</button></div>
+              </div>
             </article>
           </section>
 
           <section v-else-if="activeTab === 'evidence'" class="evidence-view" data-testid="evidence-inspector">
-            <header class="view-heading"><div><small>EVIDENCE INSPECTOR</small><h2>证据透镜</h2></div><span>{{ linkedEvidenceCount }}/{{ paper.evidence.length }} 可定位</span></header>
+            <header class="view-heading"><div><small>EVIDENCE INSPECTOR</small><h2>证据不只是位置，也要说明用途</h2></div><span>{{ linkedEvidenceCount }}/{{ paper.evidence.length }} 可定位 · {{ verifiedEvidenceCount }} 已核验</span></header>
+            <p class="view-note">EvidenceAnchor是语义实体与PDF位置之间的稳定连接。单条Anchor只表示“这段材料被用于哪个论证动作”，不等于它能独立证明整个Claim。</p>
             <template v-if="selectedEvidence">
               <article class="evidence-detail">
-                <header><span>{{ selectedEvidence.kind }}</span><b>{{ selectedEvidence.id }}</b><em>{{ selectedEvidence.verified ? '已人工核验' : '开发注释待复核' }}</em></header>
+                <header><span>{{ evidenceKindLabel(selectedEvidence.kind) }}</span><b>{{ selectedEvidence.id }}</b><em>{{ selectedEvidence.verified ? '已人工核验' : '语义解读未经双审' }}</em></header>
                 <h3>{{ selectedEvidence.label }}</h3>
-                <section class="semantic-layer"><small>科研语义层 · development_seed</small><p>{{ selectedEvidence.excerpt }}</p><span>这是开发转述，不是论文原句。</span></section>
+                <section class="semantic-layer"><small>科研语义层 · {{ reviewStatusLabel }}</small><p>{{ selectedEvidence.excerpt }}</p><span>这是开发转述，不是论文原句。</span></section>
+                <section class="evidence-usage" data-testid="evidence-usage">
+                  <header><small>它在论证链中做什么</small><b>结构化关系，不是模型自由发挥</b></header>
+                  <dl>
+                    <div><dt>参与支撑的Claim</dt><dd v-if="selectedEvidenceUsage.claims.length"><button v-for="claim in selectedEvidenceUsage.claims" :key="claim.id" @click="focusClaim(claim.id)">{{ claim.id }} · {{ claim.statement }}</button></dd><dd v-else>没有直接Claim关系；它通过实验、图表或叙事动作间接参与。</dd></div>
+                    <div><dt>对应实验</dt><dd>{{ selectedEvidenceUsage.experiments.map((item) => `${item.id} · ${item.title}`).join('；') || '没有直接实验关系' }}</dd></div>
+                    <div><dt>对应图表</dt><dd>{{ selectedEvidenceUsage.artifacts.map((item) => `${item.id} · ${item.label} ${item.role}`).join('；') || '没有直接图表关系' }}</dd></div>
+                    <div><dt>叙事动作</dt><dd>{{ selectedEvidenceUsage.moves.map((item) => `${item.order}. ${item.move}`).join('；') || '没有直接叙事动作关系' }}</dd></div>
+                    <div class="cannot-prove"><dt>不能单独推出</dt><dd>{{ boundarySummary }}</dd></div>
+                  </dl>
+                </section>
                 <section v-if="selectedLayoutArtifact || selectedLayoutSection" class="layout-layer">
                   <small>客观版面层 · {{ structure.parser_name }} 自动解析</small>
                   <h4 v-if="selectedLayoutArtifact">{{ selectedLayoutArtifact.label }} · 第 {{ selectedLayoutArtifact.page }} 页</h4>
@@ -483,23 +574,24 @@ onMounted(loadReader)
                 <button v-else class="locate-button" disabled>没有可匹配的自动解析位置</button>
               </article>
             </template>
-            <div class="anchor-catalog"><p>全部 EvidenceAnchor</p><button v-for="item in paper.evidence" :key="item.id" :class="{ active: selectedEvidenceId === item.id }" @click="inspectEvidence(item.id, false)"><span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ matchLayoutArtifact(item) || matchLayoutSection(item) ? '可定位真实页' : '没有版面映射' }}</small></div></button></div>
+            <div class="anchor-catalog"><p>全部 EvidenceAnchor · 选择后查看“支撑什么、如何使用、不能说明什么”</p><button v-for="item in paper.evidence" :key="item.id" :class="{ active: selectedEvidenceId === item.id }" @click="inspectEvidence(item.id, false)"><span>{{ item.id }}</span><div><b>{{ item.label }}</b><small>{{ evidenceKindLabel(item.kind) }} · {{ matchLayoutArtifact(item) || matchLayoutSection(item) ? '可定位真实页' : '没有版面映射' }} · {{ item.verified ? '已核验' : '待双审' }}</small></div></button></div>
             <section class="boundary-box"><b>当前不能得出的结论</b><ul><li v-for="item in paper.limitations" :key="item">{{ item }}</li></ul></section>
           </section>
 
           <section v-else class="graph-view" data-testid="paper-evidence-graph">
-            <header class="view-heading"><div><small>NEO4J CLAIM PATH</small><h2>按 Claim 阅读关系，而不是看毛线团</h2></div><span :class="{ danger: graphError }">{{ graph?.source ?? 'unavailable' }}</span></header>
+            <header class="view-heading"><div><small>ARGUMENT PATH · NEO4J INDEX</small><h2>这张关系图究竟回答什么</h2></div><span :class="{ danger: graphError }">{{ graph?.source ?? 'unavailable' }}</span></header>
+            <p class="view-note">它不负责画一张“知识大球”，只回答：当前Claim由哪些实验或图表承载，最终落到哪些EvidenceAnchor，以及哪里仍缺少人工核验。</p>
             <p v-if="graphError" class="graph-error">{{ graphError }}</p>
             <template v-else-if="graph">
               <section class="graph-proof"><div><small>索引来源</small><b>{{ graph.source }}</b></div><div><small>完整索引</small><b>{{ graph.nodes.length }} 节点 / {{ graph.edges.length }} 关系</b></div><div><small>权威边界</small><b>MySQL 是事实源</b></div></section>
               <div class="graph-focus"><b>当前 Claim</b><button v-for="claim in paper.claims" :key="claim.id" :class="{ active: focusedClaimId === claim.id }" @click="focusClaim(claim.id)">{{ claim.id }} · {{ claim.claim_type }}</button></div>
-              <article class="graph-claim"><small>CLAIM · {{ focusedClaim?.id }}</small><h3>{{ focusedClaim?.statement }}</h3></article>
+              <article class="graph-claim"><small>要检查的科研主张 · {{ focusedClaim?.id }}</small><h3>{{ focusedClaim?.statement }}</h3><p>下面每条路径都必须经过实验或图表，再落到可定位证据；有关系不等于结论已被人工确认。</p></article>
               <div class="graph-path-list">
                 <article v-for="path in graphPaths" :key="path.entity.node_id" data-testid="graph-path">
-                  <div class="relation-arrow"><span>SUPPORTS</span><i>↓</i></div>
-                  <section class="graph-entity" :class="path.entity.node_type"><small>{{ path.entity.node_type }} · {{ path.entity.local_id }}</small><h4>{{ path.entity.label }}</h4><p>{{ path.entity.summary }}</p></section>
-                  <div class="relation-arrow"><span>SUPPORTED_BY</span><i>↓</i></div>
-                  <div class="graph-evidence-list"><button v-for="node in path.evidence" :key="node.node_id" @click="node.local_id && inspectEvidence(node.local_id)"><span>{{ node.local_id }}</span><div><b>{{ node.label }}</b><small>{{ node.verified ? 'verified' : 'unverified · 点击定位' }}</small></div></button></div>
+                  <header class="path-step"><span>{{ path.entity.node_type === 'experiment' ? '实验验证' : '图表表达' }}</span><b>{{ path.entity.local_id }} · {{ path.entity.label }}</b></header>
+                  <section class="graph-entity" :class="path.entity.node_type"><p>{{ graphEntityExplanation(path.entity) }}</p><strong>{{ path.entity.summary }}</strong></section>
+                  <div class="relation-arrow"><span>依据 {{ path.evidence.length }} 条 EvidenceAnchor，可点击回到用途与原页</span><i>↓</i></div>
+                  <div class="graph-evidence-list"><button v-for="node in path.evidence" :key="node.node_id" @click="node.local_id && inspectEvidence(node.local_id)"><span>{{ node.local_id }}</span><div><b>{{ node.label }}</b><small>{{ node.verified ? '已人工核验' : '语义待双审 · 点击解释' }}</small></div></button></div>
                 </article>
                 <p v-if="!graphPaths.length" class="graph-empty">当前 Claim 没有 Experiment/Artifact → Evidence 的闭合路径。</p>
               </div>
@@ -540,6 +632,13 @@ onMounted(loadReader)
 .evidence-detail { margin-top: 12px; padding: 14px; border: 1px solid #d7dfda; border-radius: 11px; background: white; }.evidence-detail > header { display: flex; gap: 7px; align-items: center; color: #ef683e; font-size: 8px; text-transform: uppercase; }.evidence-detail header em { margin-left: auto; padding: 4px 6px; border-radius: 99px; background: #fff0dc; color: #8a5919; font-size: 7px; font-style: normal; }.evidence-detail h3 { margin: 10px 0; font-family: Georgia, serif; font-size: 23px; }.semantic-layer, .layout-layer { padding: 12px; border-radius: 8px; }.semantic-layer { border-left: 3px solid #ef683e; background: #fff7ed; }.layout-layer { margin-top: 9px; border-left: 3px solid #2d7556; background: #edf5f0; }.semantic-layer small, .layout-layer small { color: #7a6754; font-size: 7px; font-weight: 900; letter-spacing: .8px; }.layout-layer small { color: #46705c; }.semantic-layer p { margin: 8px 0; font-family: Georgia, serif; font-size: 12px; line-height: 1.55; }.semantic-layer span, .layout-layer p { color: #6e796f; font-size: 8px; line-height: 1.5; }.layout-layer h4 { margin: 8px 0; font-size: 12px; }.locate-button { width: 100%; margin-top: 8px; padding: 9px; border: 0; border-radius: 7px; background: #205c45; color: white; font-size: 8px; font-weight: 900; }.locate-button:disabled { background: #dfe4e0; color: #89938d; }
 .anchor-catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 15px; }.anchor-catalog > p { grid-column: 1 / -1; margin: 0 0 3px; color: #849189; font-size: 8px; font-weight: 900; }.anchor-catalog > button { display: grid; grid-template-columns: 31px 1fr; gap: 6px; padding: 8px; border: 1px solid #e0e5e1; border-radius: 8px; background: white; color: #34483e; text-align: left; }.anchor-catalog > button.active { border-color: #ef683e; box-shadow: inset 3px 0 #ef683e; }.anchor-catalog > button > span { color: #ef683e; font-size: 7px; font-weight: 900; }.anchor-catalog b, .anchor-catalog small { display: block; }.anchor-catalog b { font-size: 8px; }.anchor-catalog small { margin-top: 2px; color: #728178; font-size: 7px; }.boundary-box { margin-top: 14px; padding: 12px; border: 1px solid #ead5b7; border-radius: 9px; background: #fff9ef; }.boundary-box b { color: #865718; font-size: 9px; }.boundary-box ul { margin: 7px 0 0; padding-left: 15px; }.boundary-box li { margin: 4px 0; color: #6f644f; font-size: 8px; line-height: 1.5; }
 .graph-error { padding: 12px; border-left: 4px solid #ef683e; background: #ffe6dc; color: #8e3c24; font-size: 9px; }.graph-proof { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }.graph-proof div { display: grid; gap: 4px; padding: 10px; border: 1px solid #d6dfd9; border-radius: 8px; background: white; }.graph-proof small { color: #829087; font-size: 7px; }.graph-proof b { color: #245d45; font-size: 9px; }.graph-focus { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-bottom: 9px; }.graph-focus b { margin-right: 3px; color: #66766d; font-size: 8px; }.graph-focus button { padding: 5px 7px; border: 1px solid #cbd7cf; border-radius: 99px; background: white; color: #52645a; font-size: 7px; }.graph-focus button.active { border-color: #205c45; background: #205c45; color: white; }.graph-claim { padding: 13px; border: 1px solid #a8c250; border-radius: 9px; background: #f3ffca; }.graph-claim small { color: #668115; font-size: 7px; font-weight: 900; }.graph-claim h3 { margin: 6px 0 0; font-family: Georgia, serif; font-size: 14px; line-height: 1.45; }.graph-path-list { display: grid; gap: 10px; }.graph-path-list > article { padding-left: 18px; border-left: 2px solid #a9bbb0; }.relation-arrow { display: flex; gap: 8px; align-items: center; min-height: 28px; color: #718078; }.relation-arrow span { font-size: 7px; font-weight: 900; }.relation-arrow i { color: #ef683e; font-style: normal; }.graph-entity { padding: 11px; border: 1px solid #b8cbbf; border-radius: 8px; background: #e9f2ed; }.graph-entity.artifact { border-color: #e0bd83; background: #fff3df; }.graph-entity small { color: #4c7662; font-size: 7px; font-weight: 900; }.graph-entity h4 { margin: 5px 0; font-size: 12px; }.graph-entity p { margin: 0; color: #65736c; font-size: 8px; line-height: 1.45; }.graph-evidence-list { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }.graph-evidence-list button { display: grid; grid-template-columns: 32px 1fr; gap: 6px; padding: 8px; border: 1px solid #cfc9e8; border-radius: 7px; background: #f4f1ff; color: #3c3b4a; text-align: left; }.graph-evidence-list button > span { color: #6e61a3; font-size: 7px; font-weight: 900; }.graph-evidence-list b, .graph-evidence-list small { display: block; }.graph-evidence-list b { font-size: 8px; }.graph-evidence-list small { margin-top: 2px; color: #817c97; font-size: 6px; }.graph-empty, .graph-warning { color: #7d8982; font-size: 8px; }.graph-warning { padding-top: 8px; border-top: 1px solid #dbe2dd; }
+.reader-tabs button { padding: 9px 5px; font-size: 11px; }
+.view-heading small { font-size: 8px; }.view-heading > span { font-size: 9px; }.view-note { margin: 8px 0 14px; color: #66766e; font-size: 11px; line-height: 1.6; }
+.card-view > article { grid-template-columns: 82px 1fr; margin-bottom: 10px; padding: 14px; border-radius: 11px; }.card-view > article.muted { opacity: .62; }.card-body h3 { font-size: 17px; }.card-body dl > div { grid-template-columns: 104px 1fr; padding: 8px 0; }.card-body dt { color: #6e7d75; font-size: 10px; }.card-body dd { color: #30483c; font-size: 11px; line-height: 1.6; }
+.card-view > article.artifact-card { grid-template-columns: 1fr; gap: 14px; }.artifact-visual { overflow: hidden; border: 1px solid #cbd9d1; border-radius: 10px; background: #dfeae4; }.artifact-visual.table { border-color: #e2c89e; background: #fff3df; }.artifact-visual img { width: 100%; max-height: 330px; display: block; object-fit: contain; background: white; }.artifact-visual > footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 9px 11px; }.artifact-visual footer div { display: grid; gap: 2px; }.artifact-visual footer small { color: #6e7d75; font-size: 8px; }.artifact-visual footer b { font-size: 11px; }.artifact-visual footer button { padding: 7px 9px; border: 1px solid #285f48; border-radius: 6px; background: white; color: #285f48; font-size: 9px; font-weight: 800; }.artifact-visual .artifact-mark { min-height: 120px; display: grid; place-content: center; color: #235e46; text-align: center; }.artifact-visual .artifact-mark.table { color: #8a581a; }.artifact-visual .artifact-mark small { font-size: 9px; }.artifact-visual .artifact-mark b { margin-top: 4px; font-size: 16px; }.artifact-explanation > header small { color: #ef683e; font-size: 8px; font-weight: 900; letter-spacing: 1px; }.artifact-explanation .cannot-prove, .evidence-usage .cannot-prove { background: #fffaf1; }.artifact-explanation .cannot-prove dt, .evidence-usage .cannot-prove dt { color: #8b5c20; }
+.evidence-detail > header { font-size: 10px; }.evidence-detail header em { padding: 5px 7px; font-size: 9px; }.semantic-layer, .layout-layer { padding: 13px; }.semantic-layer small, .layout-layer small { font-size: 9px; }.semantic-layer p { font-size: 14px; line-height: 1.6; }.semantic-layer span, .layout-layer p { color: #607168; font-size: 10px; line-height: 1.6; }.layout-layer h4 { font-size: 13px; }.evidence-usage { margin-top: 10px; padding: 13px; border: 1px solid #d9e1dc; border-radius: 9px; background: #fbfcfb; }.evidence-usage > header { display: flex; justify-content: space-between; gap: 12px; }.evidence-usage header small { color: #28634c; font-size: 10px; font-weight: 900; }.evidence-usage header b { color: #87938c; font-size: 8px; }.evidence-usage dl { margin: 8px 0 0; }.evidence-usage dl > div { display: grid; grid-template-columns: 112px 1fr; gap: 8px; padding: 8px; border-top: 1px solid #e7ece8; }.evidence-usage dt { color: #6c7a72; font-size: 10px; font-weight: 800; }.evidence-usage dd { margin: 0; color: #31473c; font-size: 11px; line-height: 1.55; }.evidence-usage dd button { display: block; margin-bottom: 4px; padding: 4px 6px; border: 1px solid #cdd9d1; border-radius: 5px; background: white; color: #285f48; text-align: left; font-size: 10px; }.locate-button { padding: 10px; font-size: 10px; }
+.anchor-catalog > p { font-size: 10px; line-height: 1.5; }.anchor-catalog > button { grid-template-columns: 38px 1fr; gap: 8px; padding: 10px; }.anchor-catalog > button > span { font-size: 9px; }.anchor-catalog b { font-size: 10px; }.anchor-catalog small { margin-top: 3px; color: #687970; font-size: 9px; line-height: 1.45; }.boundary-box b { font-size: 10px; }.boundary-box li { font-size: 10px; line-height: 1.55; }
+.graph-proof small, .graph-focus b, .graph-focus button { font-size: 9px; }.graph-proof b { font-size: 10px; }.graph-claim { padding: 14px; }.graph-claim small { font-size: 9px; }.graph-claim h3 { font-size: 15px; line-height: 1.5; }.graph-claim p { margin: 8px 0 0; color: #667447; font-size: 10px; line-height: 1.55; }.graph-path-list { gap: 12px; margin-top: 12px; }.graph-path-list > article { padding: 13px; border: 1px solid #d5ded8; border-radius: 10px; background: white; }.path-step { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }.path-step span { padding: 5px 7px; border-radius: 5px; background: #ffe4d9; color: #924a30; font-size: 9px; font-weight: 900; }.path-step b { font-size: 12px; }.relation-arrow { min-height: 34px; color: #61736a; }.relation-arrow span { font-size: 10px; }.graph-entity p { margin: 0 0 5px; color: #4e675b; font-size: 10px; line-height: 1.5; }.graph-entity strong { color: #263e33; font-size: 12px; line-height: 1.45; }.graph-evidence-list { gap: 6px; }.graph-evidence-list button { grid-template-columns: 38px 1fr; gap: 7px; padding: 9px; }.graph-evidence-list button > span { font-size: 9px; }.graph-evidence-list b { font-size: 10px; }.graph-evidence-list small { margin-top: 3px; color: #716d88; font-size: 8px; }.graph-empty, .graph-warning { font-size: 10px; }
 .reader-state { margin: 70px auto; max-width: 520px; padding: 28px; border: 1px solid #dce3de; border-radius: 14px; background: white; text-align: center; }.reader-state.error { border-color: #edb69e; }.reader-state a { color: #205c45; }
 @media (max-width: 1120px) { .runtime-audit { grid-template-columns: repeat(2, 105px); }.runtime-audit div:nth-child(2) { border-right: 0; }.runtime-audit div:nth-child(-n+2) { border-bottom: 1px solid #e7ebe8; }.reader-grid { grid-template-columns: minmax(520px, 1.05fr) minmax(410px, .95fr); } }
 @media (max-width: 900px) { .paper-reader { height: auto; overflow: visible; }.reader-header { grid-template-columns: 1fr; }.paper-identity h1 { white-space: normal; }.runtime-audit { grid-template-columns: repeat(4, 1fr); }.runtime-audit div { border-bottom: 0 !important; border-right: 1px solid #e7ebe8 !important; }.runtime-audit div:last-child { border-right: 0 !important; }.reader-grid { height: auto; display: block; }.document-pane { height: 72vh; min-height: 560px; border-right: 0; border-bottom: 1px solid #cfd8d2; }.analysis-pane { overflow: visible; }.reader-integrity { align-items: start; flex-wrap: wrap; } }

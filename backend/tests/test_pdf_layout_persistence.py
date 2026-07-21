@@ -560,6 +560,18 @@ def test_private_pdf_preview_api_is_local_hash_bound_and_never_returns_raw_pdf(
     assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
     assert not response.content.startswith(b"%PDF")
 
+    excerpt_response = TestClient(app).get(
+        "/api/v1/papers/paper-1/document-preview/artifacts/art-1/excerpt"
+    )
+    assert excerpt_response.status_code == 200
+    assert excerpt_response.headers["content-type"] == "image/png"
+    assert excerpt_response.headers["cache-control"] == "private, no-store"
+    assert excerpt_response.headers["x-kd-preview"] == "local-private-copy"
+    assert excerpt_response.headers["x-kd-preview-scope"] == (
+        "derived-reading-excerpt"
+    )
+    assert excerpt_response.content.startswith(b"\x89PNG\r\n\x1a\n")
+
     section_response = TestClient(app).get(
         "/api/v1/papers/paper-1/document-preview/sections/sec-1"
     )
