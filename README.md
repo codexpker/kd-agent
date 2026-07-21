@@ -58,7 +58,7 @@ cd frontend && npx playwright install chromium
 make demo-accept-offline
 ```
 
-Docker中的MySQL和Neo4j已启动时，可追加R2真实双库接受测试：
+Docker中的MySQL和Neo4j已启动时，可追加R2真实双库和授权私有PDF浏览器验收：
 
 ```bash
 make demo-accept
@@ -70,6 +70,12 @@ Windows没有`make`时，在`backend`目录运行：
 ..\.venv\Scripts\python.exe -m app.cli.demo_acceptance
 ..\.venv\Scripts\python.exe -m app.cli.demo_acceptance --with-infrastructure
 ```
+
+`--with-infrastructure`要求`.env`已配置真实MySQL/Neo4j、`DOCUMENT_STRUCTURE_BACKEND=mysql`、
+`EVIDENCE_GRAPH_BACKEND=neo4j`和仅指向本机授权副本目录的`PRIVATE_PDF_PREVIEW_ROOT`。它会在双库
+幂等验收后运行`npm run test:e2e:real-infra`，验证`parsed_pdf`、即时私有PNG、EvidenceAnchor定位和
+Neo4j Claim路径；不会上传或提交PDF，星辰仍固定为离线。默认`npm run test:e2e`继续只运行无外部
+基础设施的合成黄金流程。
 
 也可以分别运行：
 

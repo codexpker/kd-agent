@@ -40,12 +40,19 @@ def build_steps(
         ),
     ]
     if with_infrastructure:
-        steps.append(
-            AcceptanceStep(
-                name="mysql_neo4j_r2_acceptance",
-                command=(python, "-m", "app.cli.r2_acceptance"),
-                working_directory=backend,
-            )
+        steps.extend(
+            [
+                AcceptanceStep(
+                    name="mysql_neo4j_r2_acceptance",
+                    command=(python, "-m", "app.cli.r2_acceptance"),
+                    working_directory=backend,
+                ),
+                AcceptanceStep(
+                    name="real_infrastructure_browser_flow",
+                    command=(npm, "run", "test:e2e:real-infra"),
+                    working_directory=frontend,
+                ),
+            ]
         )
     return steps
 
@@ -77,7 +84,10 @@ def main() -> int:
     parser.add_argument(
         "--with-infrastructure",
         action="store_true",
-        help="also run the real MySQL/Neo4j R2 acceptance",
+        help=(
+            "also run the real MySQL/Neo4j R2 acceptance and the authorized "
+            "private-PDF browser flow"
+        ),
     )
     args = parser.parse_args()
     repository_root = Path(__file__).resolve().parents[3]

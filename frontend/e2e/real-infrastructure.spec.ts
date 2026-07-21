@@ -1,0 +1,94 @@
+import { expect, test } from '@playwright/test'
+
+const backendOrigin = 'http://127.0.0.1:8011'
+const paperId = 'anomaly-transformer-2022'
+
+test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-reading loop', async ({ page, request }) => {
+  const health = await request.get(`${backendOrigin}/api/v1/healthz`)
+  expect(health.ok()).toBeTruthy()
+
+  const structureResponse = await request.get(
+    `${backendOrigin}/api/v1/papers/${paperId}/document-structure`,
+  )
+  expect(structureResponse.ok()).toBeTruthy()
+  const structure = await structureResponse.json()
+  expect(structure).toMatchObject({
+    source: 'parsed_pdf',
+    parser_name: 'pymupdf',
+    page_count: 20,
+  })
+  expect(structure.file_sha256).toMatch(/^[a-f0-9]{64}$/)
+  expect(structure.sections).toHaveLength(28)
+  const figureOne = structure.artifacts.find(
+    (item: { label: string }) => item.label === 'Figure 1',
+  )
+  expect(figureOne).toMatchObject({ id: 'art-1', page: 4 })
+
+  const graphResponse = await request.get(
+    `${backendOrigin}/api/v1/papers/${paperId}/evidence-graph`,
+  )
+  expect(graphResponse.ok()).toBeTruthy()
+  const graph = await graphResponse.json()
+  expect(graph.source).toBe('neo4j')
+  expect(graph.nodes).toHaveLength(30)
+  expect(graph.edges).toHaveLength(65)
+
+  const assistantSession = await request.post(`${backendOrigin}/api/v1/assistant/sessions`, {
+    data: { paper_id: paperId },
+  })
+  expect(assistantSession.ok()).toBeTruthy()
+  expect(await assistantSession.json()).toMatchObject({
+    backend: 'offline',
+    provider_status: 'ready',
+  })
+
+  for (const endpoint of [
+    'document-preview/sections/sec-1',
+    'document-preview/artifacts/art-1',
+  ]) {
+    const preview = await request.get(`${backendOrigin}/api/v1/papers/${paperId}/${endpoint}`)
+    expect(preview.ok()).toBeTruthy()
+    expect(preview.headers()['content-type']).toContain('image/png')
+    expect(preview.headers()['cache-control']).toContain('private')
+    expect(preview.headers()['cache-control']).toContain('no-store')
+    expect(preview.headers()['x-kd-preview']).toBe('local-private-copy')
+    const bytes = await preview.body()
+    expect(bytes.subarray(1, 4).toString()).toBe('PNG')
+  }
+
+  await page.goto(`/papers/${paperId}`)
+  await expect(page.getByTestId('paper-reader')).toBeVisible()
+  await expect(page.getByTestId('reader-integrity')).toContainText('自动解析，尚未双审')
+  const status = page.getByTestId('core-service-status')
+  await expect(status).toContainText('20 页')
+  await expect(status).toContainText('10/10')
+  await expect(status).toContainText('30/65')
+  await expect(status).toContainText('neo4j')
+  await expect(page.getByTestId('core-chain-stage')).toHaveCount(9)
+
+  const pdfImage = page.getByTestId('pdf-viewer-canvas').locator('img')
+  await expect(pdfImage).toBeVisible()
+  await expect.poll(() => pdfImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+  expect(await pdfImage.evaluate((image: HTMLImageElement) => image.getBoundingClientRect().width)).toBeGreaterThanOrEqual(580)
+
+  await page.getByRole('button', { name: '证据', exact: true }).click()
+  const figureAnchor = page.locator('.anchor-catalog button').filter({ hasText: 'ev-3' })
+  await figureAnchor.click()
+  await expect(page.getByTestId('evidence-inspector')).toContainText('Figure 1 · 第 4 页')
+  await expect(page.getByTestId('evidence-inspector')).toContainText('客观版面层')
+  await expect(page.locator('.page-controls')).toContainText('第 4 / 20 页')
+  await expect(page.locator('.preview-status')).toContainText('Figure 1')
+  await expect(pdfImage).toHaveAttribute('src', /document-preview\/artifacts\/art-1/)
+  await expect.poll(() => pdfImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Neo4j 路径', exact: true }).click()
+  const graphPanel = page.getByTestId('paper-evidence-graph')
+  await expect(graphPanel).toContainText('neo4j')
+  await expect(graphPanel).toContainText('30 节点 / 65 关系')
+  await expect(graphPanel).toContainText('MySQL 是事实源')
+  await expect(page.getByTestId('graph-path')).toHaveCount(5)
+
+  await page.goto('/knowledge-graph')
+  await expect(page).toHaveURL(new RegExp(`/papers/${paperId}\\?tab=graph`))
+  await expect(page.getByTestId('paper-evidence-graph')).toContainText('neo4j')
+})

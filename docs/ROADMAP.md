@@ -105,7 +105,8 @@
   - [x] 新增单一Playwright黄金流程，自动启动独立离线后端与Vite，覆盖开发种子边界、`gold_snapshot`空页码、真实语料`insufficient_evidence`和R4完整绘图闭环。
   - [x] 浏览器验收从合成TAD表单继续到Claim v1、八项诊断、Experiment/Artifact Plan、运行登记、CSV Schema、受控绘图、PNG/SVG、逐点溯源JSON和复现包；合成数据不被标记为科研成绩。
   - [x] 运行登记默认选择带Figure的Experiment，并在Table-only实验上显示明确提示，避免演示在空Figure ArtifactPlan处无解释停止。
-  - [x] `make demo-accept-offline`统一运行后端全测、Vue生产构建和浏览器黄金流程；`make demo-accept`再追加真实MySQL/Neo4j R2接受测试。
+  - [x] `make demo-accept-offline`统一运行后端全测、Vue生产构建和浏览器黄金流程；`make demo-accept`再追加真实MySQL/Neo4j R2验收与授权私有PDF浏览器闭环。
+  - [x] 真实基础设施Playwright套件硬校验MySQL `parsed_pdf`、本地SHA-256匹配PNG、Figure 1第4页联动、Neo4j 30节点/65关系、9阶段核心链及1280×720下至少580px的PDF显示宽度；星辰仍固定为`offline`，该套件不进入无外部服务CI。
 - [x] 建立第一阶段“对话式科研工作台”，修复单页超长表单作为唯一入口的问题。
   - [x] 引入Vue Router和固定应用壳，默认进入科研助理；论文、项目、机会、实验图表、知识图谱和专业工作区均有明确导航，原有结构化能力继续兼容。
   - [x] 科研助理提供拆解论文、分析研究机会、诊断Claim和生成实验图表四类任务入口，以执行步骤、证据侧栏和结构化工作区承载结果，不把聊天文本作为唯一产物。

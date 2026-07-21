@@ -25,6 +25,7 @@ def test_demo_acceptance_plan_keeps_infrastructure_explicit(tmp_path: Path) -> N
     assert [step.name for step in full] == [
         *[step.name for step in offline],
         "mysql_neo4j_r2_acceptance",
+        "real_infrastructure_browser_flow",
     ]
     assert all(step.command[0] in {"python-test", "npm-test"} for step in full)
 
