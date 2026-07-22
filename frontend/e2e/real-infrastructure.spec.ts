@@ -94,7 +94,7 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
 
   await page.goto(`/papers/${paperId}`)
   await expect(page.getByTestId('paper-reader')).toBeVisible()
-  await expect(page.getByText('API 在线 · 本地真实链路', { exact: true })).toBeVisible()
+  await expect(page.getByText('本地证据可用 · 讯飞链路未接入', { exact: true })).toBeVisible()
   await expect(page.getByTestId('reader-integrity')).toContainText('开发种子 · 未经双审')
   const status = page.getByTestId('core-service-status')
   await expect(status).toContainText('20 页')
@@ -106,7 +106,7 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
   await page.getByTestId('demo-guide-toggle').click()
   const guide = page.getByTestId('demo-guide-panel')
   await expect(guide).toContainText('核心演示可用')
-  await expect(guide).toContainText('本地真实基础设施')
+  await expect(guide).toContainText('本地证据基础设施')
   await expect(guide).toContainText('授权本地副本与MySQL中的SHA-256匹配')
   await expect(guide).toContainText('Neo4j真实返回30个节点和65条关系')
   await page.getByRole('button', { name: '关闭演示引导' }).click()

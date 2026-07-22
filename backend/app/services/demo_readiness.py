@@ -15,6 +15,7 @@ DEMO_PAPER_ID = "anomaly-transformer-2022"
 
 
 class ReadinessSettings(Protocol):
+    research_gateway_mode: str
     document_structure_backend: str
     evidence_graph_backend: str
     private_pdf_preview_enabled: bool
@@ -23,6 +24,11 @@ class ReadinessSettings(Protocol):
     astron_agent_api_key: str
     astron_agent_api_secret: str
     astron_agent_flow_id: str
+    astron_agent_model_label: str
+    astron_agent_tool_base_url: str
+    maas_service_id: str
+    platform_verification_evidence_id: str
+    agent_tool_api_token: str
 
 
 class DemoReadinessService:
@@ -64,14 +70,75 @@ class DemoReadinessService:
             status = "degraded"
         else:
             status = "ready"
+        formal_status, formal_detail, formal_blockers = self._formal_chain_status()
         return DemoReadinessResponse(
             status=status,
             runtime_mode=(
                 "local_infrastructure" if infrastructure_mode else "offline_demo"
             ),
+            formal_chain_status=formal_status,
+            formal_chain_detail=formal_detail,
+            formal_chain_blockers=formal_blockers,
             paper_id=paper_id,
             checks=checks,
             tour_steps=_tour_steps(paper_id),
+        )
+
+    def _formal_chain_status(
+        self,
+    ) -> tuple[str, str, list[str]]:
+        blockers: list[str] = []
+        if getattr(self._settings, "research_gateway_mode", "local") == "local":
+            blockers.append("星辰工具网关仍处于本地模式")
+        if self._settings.assistant_backend != "astron":
+            blockers.append("星辰工作流后端未启用")
+        for label, value in (
+            ("星辰 API Key", getattr(self._settings, "astron_agent_api_key", "")),
+            ("星辰 API Secret", getattr(self._settings, "astron_agent_api_secret", "")),
+            ("星辰 Flow ID", getattr(self._settings, "astron_agent_flow_id", "")),
+            (
+                "星辰可访问的工具网关地址",
+                getattr(self._settings, "astron_agent_tool_base_url", ""),
+            ),
+            ("MaaS ServiceID", getattr(self._settings, "maas_service_id", "")),
+            (
+                "星辰工具网关鉴权",
+                getattr(self._settings, "agent_tool_api_token", ""),
+            ),
+        ):
+            if not str(value).strip():
+                blockers.append(f"缺少{label}")
+        model_label = str(
+            getattr(self._settings, "astron_agent_model_label", "")
+        ).strip()
+        if not model_label or model_label == "configured-in-workflow":
+            blockers.append("未登记星火/科技文献模型名称与版本")
+        tool_base_url = str(
+            getattr(self._settings, "astron_agent_tool_base_url", "")
+        ).strip()
+        if tool_base_url and not tool_base_url.startswith("https://"):
+            blockers.append("星辰工具网关地址不是HTTPS")
+
+        configuration_blockers = list(dict.fromkeys(blockers))
+        if configuration_blockers:
+            return (
+                "blocked_external_configuration",
+                "本地核心演示可以独立运行，但讯飞正式比赛链路尚未接入。",
+                configuration_blockers,
+            )
+        evidence_id = str(
+            getattr(self._settings, "platform_verification_evidence_id", "")
+        ).strip()
+        if not evidence_id:
+            return (
+                "configured_unverified",
+                "讯飞配置已加载，但尚无脱敏真实 trace、ServiceID 对比和人工核验记录。",
+                ["缺少正式链路核验证据编号"],
+            )
+        return (
+            "verified",
+            f"已登记正式链路核验证据：{evidence_id}",
+            [],
         )
 
     def _gold_check(self, paper_id: str) -> DemoReadinessCheck:
@@ -287,8 +354,8 @@ class DemoReadinessService:
                 label="科研助理语言层",
                 status="ready",
                 required_for_current_mode=False,
-                detail="当前使用离线规则与本地工具；星辰未启用，不影响结构化核心演示。",
-                action="星辰线上联调后可增强语言组织，但不能替代证据门禁。",
+                detail="当前未调用外部大模型；只验证离线规则导航与本地证据工具。",
+                action="需要真实多轮语义交互时，再联调星辰或其他许可模型并单独验证。",
             )
         configured = all(
             (

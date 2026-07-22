@@ -1,14 +1,33 @@
-from fastapi import APIRouter, File, Form, HTTPException, Path, UploadFile
-from fastapi.responses import FileResponse, Response
+from secrets import compare_digest
 
-from app.config import get_settings
-from app.demo_models import DemoReadinessResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Security,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.agent_tool_models import (
+    AgentToolResponse,
+    ComparePapersToolRequest,
+    DeconstructPaperToolRequest,
+    DiagnoseClaimToolRequest,
+    SearchPapersToolRequest,
+)
 from app.assistant_models import (
     AssistantMessageRequest,
     AssistantSession,
     AssistantSessionCreateRequest,
     AssistantTurnResponse,
 )
+from app.config import get_settings
+from app.demo_models import DemoReadinessResponse
 from app.gold_dataset import get_gold_dataset
 from app.models import DocumentStructure, PaperDeconstruction, SearchRequest, SearchResponse
 from app.evidence_graph_models import EvidenceGraphResponse
@@ -96,6 +115,7 @@ from app.services.research_planning import (
     ResearchPlanningService,
 )
 from app.services.search import DemoSearchService
+from app.services.agent_tools import AgentToolPaperNotFoundError, AgentToolService
 
 router = APIRouter(prefix="/api/v1")
 _memory_project_claim_store = InMemoryProjectClaimStore()
@@ -103,6 +123,27 @@ _memory_experiment_plan_store = InMemoryExperimentPlanStore()
 _memory_plot_draft_store = InMemoryPlotDraftStore()
 _memory_experiment_run_store = InMemoryExperimentRunStore()
 _memory_assistant_session_store = InMemoryAssistantSessionStore()
+_agent_tool_bearer = HTTPBearer(auto_error=False)
+
+
+def _authorize_agent_tool(
+    credentials: HTTPAuthorizationCredentials | None = Security(_agent_tool_bearer),
+) -> None:
+    settings = get_settings()
+    if settings.research_gateway_mode == "local":
+        return
+    expected = settings.agent_tool_api_token.strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent tool gateway is blocked_external_configuration",
+        )
+    if (
+        credentials is None
+        or credentials.scheme.casefold() != "bearer"
+        or not compare_digest(credentials.credentials, expected)
+    ):
+        raise HTTPException(status_code=401, detail="Invalid Agent tool credential")
 
 
 def _assistant_session_store():
@@ -259,6 +300,57 @@ def demo_readiness() -> DemoReadinessResponse:
 @router.post("/tools/search", response_model=SearchResponse)
 def search(request: SearchRequest) -> SearchResponse:
     return DemoSearchService(get_gold_dataset()).search(request.query, request.limit)
+
+
+@router.post(
+    "/agent-tools/search-papers",
+    response_model=AgentToolResponse,
+    operation_id="search_papers",
+    tags=["Astron Agent tools"],
+    dependencies=[Depends(_authorize_agent_tool)],
+)
+def agent_search_papers(request: SearchPapersToolRequest) -> AgentToolResponse:
+    return AgentToolService(get_gold_dataset()).search_papers(request)
+
+
+@router.post(
+    "/agent-tools/deconstruct-paper",
+    response_model=AgentToolResponse,
+    operation_id="deconstruct_paper",
+    tags=["Astron Agent tools"],
+    dependencies=[Depends(_authorize_agent_tool)],
+)
+def agent_deconstruct_paper(
+    request: DeconstructPaperToolRequest,
+) -> AgentToolResponse:
+    try:
+        return AgentToolService(get_gold_dataset()).deconstruct_paper(request)
+    except AgentToolPaperNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail="No loadable evidence-anchored paper record"
+        ) from exc
+
+
+@router.post(
+    "/agent-tools/compare-papers",
+    response_model=AgentToolResponse,
+    operation_id="compare_papers",
+    tags=["Astron Agent tools"],
+    dependencies=[Depends(_authorize_agent_tool)],
+)
+def agent_compare_papers(request: ComparePapersToolRequest) -> AgentToolResponse:
+    return AgentToolService(get_gold_dataset()).compare_papers(request)
+
+
+@router.post(
+    "/agent-tools/diagnose-claim",
+    response_model=AgentToolResponse,
+    operation_id="diagnose_claim",
+    tags=["Astron Agent tools"],
+    dependencies=[Depends(_authorize_agent_tool)],
+)
+def agent_diagnose_claim(request: DiagnoseClaimToolRequest) -> AgentToolResponse:
+    return AgentToolService(get_gold_dataset()).diagnose_claim(request)
 
 
 @router.post("/assistant/sessions", response_model=AssistantSession)

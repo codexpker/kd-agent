@@ -23,6 +23,9 @@ type DemoReadiness = {
   schema_version: 'demo-readiness-v1'
   status: ReadinessStatus
   runtime_mode: 'offline_demo' | 'local_infrastructure'
+  formal_chain_status: 'blocked_external_configuration' | 'configured_unverified' | 'verified'
+  formal_chain_detail: string
+  formal_chain_blockers: string[]
   paper_id: string
   checks: ReadinessCheck[]
   tour_steps: TourStep[]
@@ -48,7 +51,12 @@ const statusLabel = computed(() => {
   if (readiness.value?.status === 'blocked') return '核心演示存在阻断'
   return '正在检查演示环境'
 })
-const modeLabel = computed(() => readiness.value?.runtime_mode === 'local_infrastructure' ? '本地真实基础设施' : '完全离线演示')
+const modeLabel = computed(() => readiness.value?.runtime_mode === 'local_infrastructure' ? '本地证据基础设施' : '离线演示数据')
+const formalStatusLabel = computed(() => {
+  if (readiness.value?.formal_chain_status === 'verified') return '讯飞正式链路已核验'
+  if (readiness.value?.formal_chain_status === 'configured_unverified') return '讯飞链路已配置，待真实核验'
+  return '讯飞正式链路尚未接入'
+})
 
 const checkLabel: Record<CheckStatus, string> = {
   ready: '就绪',
@@ -134,6 +142,13 @@ onMounted(loadReadiness)
       <section v-if="readiness" class="readiness-summary" :class="readiness.status">
         <i></i><div><b>{{ statusLabel }}</b><span>{{ modeLabel }}</span></div>
       </section>
+      <section v-if="readiness" class="formal-chain" :class="readiness.formal_chain_status">
+        <header><b>{{ formalStatusLabel }}</b><span>比赛主链路</span></header>
+        <p>{{ readiness.formal_chain_detail }}</p>
+        <ul v-if="readiness.formal_chain_blockers.length">
+          <li v-for="blocker in readiness.formal_chain_blockers" :key="blocker">{{ blocker }}</li>
+        </ul>
+      </section>
       <p v-else-if="loading" class="guide-loading">正在检查API与核心依赖…</p>
       <p v-else class="guide-error">{{ error || '暂时无法读取演示状态。' }}</p>
 
@@ -178,6 +193,7 @@ onMounted(loadReadiness)
 .guide-trigger { display: inline-flex; gap: 6px; align-items: center; padding: 7px 11px; border: 1px solid #c7d5cc; border-radius: 99px; background: #fff; color: #285d48; font-size: 10px; font-weight: 800; cursor: pointer; }.guide-trigger span { color: #ef683e; font-size: 8px; }
 .guide-panel { position: fixed; z-index: 100; top: 14px; right: 14px; bottom: 14px; width: min(430px, calc(100vw - 28px)); overflow-y: auto; padding: 20px; border: 1px solid #cad6ce; border-radius: 18px; background: #fbfcfa; box-shadow: 0 24px 70px rgba(17,45,33,.25); color: #20362c; }.guide-panel > header { display: flex; justify-content: space-between; gap: 18px; align-items: start; }.guide-panel > header small { color: #6e8177; font-size: 9px; font-weight: 900; letter-spacing: 1.6px; }.guide-panel h2 { margin: 5px 0 0; font-size: 21px; }.guide-panel > header button, .tour-dock > header button { border: 0; background: transparent; color: #738078; font-size: 24px; cursor: pointer; }
 .readiness-summary { display: flex; gap: 11px; align-items: center; margin-top: 18px; padding: 13px; border-radius: 11px; background: #e7f3eb; }.readiness-summary i { width: 11px; height: 11px; border-radius: 50%; background: #3fa367; }.readiness-summary > div { display: grid; gap: 3px; }.readiness-summary b { font-size: 13px; }.readiness-summary span { color: #627268; font-size: 10px; }.readiness-summary.degraded { background: #fff4dc; }.readiness-summary.degraded i { background: #d69227; }.readiness-summary.blocked { background: #ffe9df; }.readiness-summary.blocked i { background: #dd603c; }
+.formal-chain { margin-top: 9px; padding: 12px 13px; border: 1px solid #efc2b3; border-radius: 11px; background: #fff7f3; }.formal-chain header { display: flex; justify-content: space-between; gap: 12px; }.formal-chain header b { color: #9a432c; font-size: 11px; }.formal-chain header span { color: #a46e5e; font-size: 8px; font-weight: 900; letter-spacing: 1px; }.formal-chain p { margin: 7px 0 0; color: #6f5148; font-size: 9px; line-height: 1.5; }.formal-chain ul { margin: 7px 0 0; padding-left: 17px; color: #865447; font-size: 9px; line-height: 1.55; }.formal-chain.configured_unverified { border-color: #ead7ae; background: #fffaf0; }.formal-chain.configured_unverified header b { color: #95691e; }.formal-chain.verified { border-color: #b7d9c4; background: #eff8f2; }.formal-chain.verified header b { color: #28734a; }
 .guide-loading, .guide-error { margin-top: 18px; padding: 14px; border-radius: 10px; background: #f0f2ef; font-size: 11px; }.guide-error { background: #ffe9df; color: #91442f; }
 .check-list { display: grid; gap: 8px; margin-top: 13px; }.check-list article { padding: 11px 12px; border: 1px solid #dce3de; border-radius: 10px; background: white; }.check-list article > header { display: flex; justify-content: space-between; }.check-list article header b { font-size: 11px; }.check-list article header span { color: #37875a; font-size: 9px; font-weight: 900; }.check-list article p { margin: 7px 0 0; color: #56675e; font-size: 10px; line-height: 1.55; }.check-list article small { display: block; margin-top: 6px; color: #886325; font-size: 9px; line-height: 1.45; }.check-list article.blocked { border-color: #efb9a7; background: #fff8f5; }.check-list article.blocked header span { color: #c7502f; }.check-list article.warning, .check-list article.not_configured { border-color: #ead7ae; }.check-list article.warning header span, .check-list article.not_configured header span { color: #a67523; }
 .guide-story { margin-top: 18px; padding-top: 15px; border-top: 1px solid #dfe5e1; }.guide-story > header { display: flex; justify-content: space-between; }.guide-story > header b { font-size: 12px; }.guide-story > header span { color: #7b8981; font-size: 9px; }.guide-story ol { display: grid; gap: 10px; margin: 13px 0 0; padding: 0; list-style: none; }.guide-story li { display: grid; grid-template-columns: 25px 1fr; gap: 9px; align-items: start; }.guide-story li > i { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #dfeee6; color: #1e6548; font-size: 10px; font-style: normal; font-weight: 900; }.guide-story li div { display: grid; gap: 3px; }.guide-story li b { font-size: 11px; }.guide-story li span { color: #68776f; font-size: 9px; line-height: 1.5; }

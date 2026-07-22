@@ -18,6 +18,7 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
     schema_version: 'demo-readiness-v1',
     status: 'ready',
     runtime_mode: 'offline_demo',
+    formal_chain_status: 'blocked_external_configuration',
   })
   expect(readinessPayload.tour_steps).toHaveLength(5)
 
@@ -46,14 +47,14 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
 
   await page.goto('/assistant')
   await expect(page.getByTestId('assistant-shell')).toBeVisible()
-  await expect(page.getByText('API 在线 · 完全离线模式', { exact: true })).toBeVisible()
+  await expect(page.getByText('本地演示可用 · 讯飞链路未接入', { exact: true })).toBeVisible()
   await expect(page.getByTestId('graph-source')).toHaveText('gold_snapshot')
   await expect(page.getByTestId('quick-task-paper')).toBeVisible()
   await expect(page.getByTestId('quick-task-opportunity')).toBeVisible()
   await expect(page.getByTestId('quick-task-claim')).toBeVisible()
-  await expect(page.getByTestId('quick-task-plot')).toBeVisible()
+  await expect(page.getByTestId('quick-task-plot')).toHaveCount(0)
   await page.getByTestId('run-evidence-demo').click()
-  await expect(page.getByRole('heading', { name: '拆解一篇论文', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '论文逆向工程', exact: true })).toBeVisible()
   await expect(page.locator('.task-status li.done')).toHaveCount(3)
   await expect(page.getByTestId('assistant-runtime')).toHaveText('离线规则 · 本地证据工具')
   await expect(page.getByTestId('assistant-tool-runs')).toContainText('paper_deconstruct')
@@ -89,7 +90,8 @@ test('synthetic_smoke_test: offline golden demo remains evidence-bounded and exe
   await page.getByTestId('demo-guide-toggle').click()
   const guide = page.getByTestId('demo-guide-panel')
   await expect(guide).toContainText('核心演示可用')
-  await expect(guide).toContainText('完全离线演示')
+  await expect(guide).toContainText('离线演示数据')
+  await expect(guide).toContainText('讯飞正式链路尚未接入')
   await expect(page.getByTestId('demo-readiness-checks').locator(':scope > article')).toHaveCount(6)
   await expect(guide).toContainText('离线演示使用进程内临时会话')
   await page.getByTestId('start-guided-demo').click()

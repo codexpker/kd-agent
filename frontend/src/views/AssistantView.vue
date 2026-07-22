@@ -113,12 +113,13 @@ const messages = ref<ChatMessage[]>([
   },
 ])
 
-const quickTasks: { kind: TaskKind; code: string; title: string; description: string }[] = [
-  { kind: 'paper', code: '01', title: '拆解一篇论文', description: '查看 Claim、实验意图、图表角色和 EvidenceAnchor。' },
-  { kind: 'opportunity', code: '02', title: '分析研究机会', description: '按已核验证据覆盖判断候选或明确证据不足。' },
-  { kind: 'claim', code: '03', title: '诊断我的 Claim', description: '录入研究想法并生成八类最小证据需求。' },
-  { kind: 'plot', code: '04', title: '生成实验图表', description: '上传真实 CSV/JSON，校验、绘图并保留逐点溯源。' },
+const taskCatalog: { kind: TaskKind; code: string; title: string; description: string }[] = [
+  { kind: 'paper', code: '01', title: '论文逆向工程', description: '看懂问题、方法、实验、图表和结论边界如何形成证据链。' },
+  { kind: 'opportunity', code: '02', title: '领域进展地图', description: '比较多篇论文的证据，输出可核验的候选切入点。' },
+  { kind: 'claim', code: '03', title: '我的研究教练', description: '从你的 Claim 反推实验、图表和仍缺少的证据。' },
+  { kind: 'plot', code: '04', title: '生成实验图表', description: '在研究教练中上传真实数据，校验、绘图并保留逐点溯源。' },
 ]
+const quickTasks = taskCatalog.filter((item) => item.kind !== 'plot')
 
 const evidenceById = computed(
   () => new Map((paper.value?.evidence ?? []).map((item) => [item.id, item])),
@@ -274,7 +275,7 @@ async function askPaperAssistant(question: string) {
   if (loading.value) return
   loading.value = true
   error.value = ''
-  activeTask.value = '拆解一篇论文'
+  activeTask.value = '论文逆向工程'
   latestToolRuns.value = []
   setSteps([
     ['建立可追踪会话', '绑定论文、trace_id、提示词版本和运行后端'],
@@ -333,7 +334,7 @@ function setSteps(items: Array<[string, string]>) {
 
 async function runTask(kind: TaskKind, fromPrompt = false) {
   if (loading.value) return
-  const task = quickTasks.find((item) => item.kind === kind)!
+  const task = taskCatalog.find((item) => item.kind === kind)!
   if (!fromPrompt) addMessage('user', task.title)
   activeTask.value = task.title
   error.value = ''
@@ -358,7 +359,7 @@ async function runTask(kind: TaskKind, fromPrompt = false) {
         : '绘图必须绑定 ExperimentPlan 和用户上传数据。我已为你定位到实验与图表工作区，不会自动补造任何结果。',
       '结构化任务导航',
     )
-    await router.push({ path: '/workspace', hash: '#project-claim' })
+    await router.push({ path: '/projects', hash: '#project-claim' })
     return
   }
 
@@ -450,14 +451,22 @@ onMounted(async () => {
     <section class="assistant-main">
       <header class="assistant-hero">
         <div>
-          <p>EVIDENCE-GROUNDED RESEARCH COPILOT</p>
-          <h1>让对话推进科研任务，<br /><em>让证据约束每一步。</em></h1>
+          <p>PAPER REVERSE ENGINEERING & RESEARCH NARRATIVE TRAINING</p>
+          <h1>看懂优秀论文为什么这样研究，<br /><em>再迁移到自己的课题。</em></h1>
           <span>{{ assistantRuntimeDescription }} {{ assistantSession ? assistantStorageLabel : '' }}</span>
         </div>
         <button data-testid="run-evidence-demo" :disabled="loading" @click="runTask('paper')">
           {{ loading ? '执行中…' : '启动证据链演示' }}
         </button>
       </header>
+
+      <section class="north-star-questions" aria-label="论文逆向工程五个核心问题">
+        <span>为什么研究这个问题？</span>
+        <span>为什么采用这种方法？</span>
+        <span>为什么设计这些实验？</span>
+        <span>为什么放这张图表？</span>
+        <span>证据如何串成可信结论？</span>
+      </section>
 
       <section class="quick-task-grid" aria-label="科研任务入口">
         <button v-for="item in quickTasks" :key="item.kind" :data-testid="`quick-task-${item.kind}`" @click="runTask(item.kind)">
@@ -568,8 +577,9 @@ onMounted(async () => {
 
 <style scoped>
 .assistant-view { max-width: none; display: grid; grid-template-columns: minmax(520px, 1.35fr) minmax(390px, .8fr); min-height: calc(100vh - 66px); background: #f4f6f3; }
-.assistant-main { min-width: 0; padding: 45px clamp(24px, 4vw, 65px) 70px; }.assistant-hero { display: flex; justify-content: space-between; gap: 30px; align-items: end; }.assistant-hero > div { max-width: 780px; }.assistant-hero p { color: #678075; font-size: 10px; font-weight: 900; letter-spacing: 2px; }.assistant-hero h1 { margin: 12px 0 18px; color: #173126; font-size: clamp(38px, 4.6vw, 68px); line-height: 1.02; letter-spacing: -3px; }.assistant-hero h1 em { color: #ef683e; font-style: normal; }.assistant-hero span { color: #708079; font-size: 12px; }.assistant-hero > button { min-width: 160px; padding: 13px 16px; border: 0; border-radius: 10px; background: #205c45; color: white; font-weight: 800; box-shadow: 0 8px 22px rgba(32,92,69,.2); }
-.quick-task-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 32px; }.quick-task-grid button { min-height: 150px; display: grid; grid-template-columns: 1fr auto; align-content: start; gap: 7px; padding: 16px; border: 1px solid #dbe2dd; border-radius: 14px; background: #fff; color: #1d3429; text-align: left; transition: .18s; }.quick-task-grid button:hover { transform: translateY(-3px); border-color: #8fb5a2; box-shadow: 0 10px 25px rgba(23,49,38,.08); }.quick-task-grid button > span { color: #ef683e; font-size: 10px; font-weight: 900; }.quick-task-grid button > b { grid-column: 1 / -1; font-size: 14px; }.quick-task-grid button p { grid-column: 1 / -1; margin: 3px 0; color: #748179; font-size: 11px; line-height: 1.5; }.quick-task-grid button i { grid-column: 2; color: #205c45; font-style: normal; font-size: 20px; }
+.assistant-main { min-width: 0; padding: 45px clamp(24px, 4vw, 65px) 70px; }.assistant-hero { display: flex; justify-content: space-between; gap: 30px; align-items: end; }.assistant-hero > div { max-width: 850px; }.assistant-hero p { color: #678075; font-size: 10px; font-weight: 900; letter-spacing: 2px; }.assistant-hero h1 { margin: 12px 0 18px; color: #173126; font-size: clamp(36px, 4.2vw, 62px); line-height: 1.04; letter-spacing: -3px; }.assistant-hero h1 em { color: #ef683e; font-style: normal; }.assistant-hero span { color: #708079; font-size: 12px; }.assistant-hero > button { min-width: 160px; padding: 13px 16px; border: 0; border-radius: 10px; background: #205c45; color: white; font-weight: 800; box-shadow: 0 8px 22px rgba(32,92,69,.2); }
+.north-star-questions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 25px; }.north-star-questions span { padding: 7px 10px; border: 1px solid #d8e1db; border-radius: 99px; background: #f9fbf8; color: #53675d; font-size: 10px; }
+.quick-task-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }.quick-task-grid button { min-height: 150px; display: grid; grid-template-columns: 1fr auto; align-content: start; gap: 7px; padding: 16px; border: 1px solid #dbe2dd; border-radius: 14px; background: #fff; color: #1d3429; text-align: left; transition: .18s; }.quick-task-grid button:hover { transform: translateY(-3px); border-color: #8fb5a2; box-shadow: 0 10px 25px rgba(23,49,38,.08); }.quick-task-grid button > span { color: #ef683e; font-size: 10px; font-weight: 900; }.quick-task-grid button > b { grid-column: 1 / -1; font-size: 14px; }.quick-task-grid button p { grid-column: 1 / -1; margin: 3px 0; color: #748179; font-size: 11px; line-height: 1.5; }.quick-task-grid button i { grid-column: 2; color: #205c45; font-style: normal; font-size: 20px; }
 .conversation-card { margin-top: 20px; overflow: hidden; border: 1px solid #dbe2dd; border-radius: 16px; background: white; box-shadow: 0 14px 40px rgba(28,55,43,.06); }.conversation-card > header { display: flex; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #edf0ed; }.conversation-card > header div { display: flex; align-items: center; gap: 8px; }.conversation-card > header i { width: 9px; height: 9px; border-radius: 50%; background: #52a574; }.conversation-card > header b { font-size: 12px; }.conversation-card > header span { color: #8a968f; font-size: 10px; }.message-list { min-height: 245px; max-height: 440px; overflow-y: auto; padding: 22px; background: linear-gradient(180deg,#fbfcfb,#f4f7f4); }.message-list article { max-width: 82%; margin-bottom: 15px; padding: 13px 15px; border-radius: 4px 14px 14px 14px; background: white; box-shadow: 0 4px 14px rgba(33,57,46,.05); }.message-list article.user { margin-left: auto; border-radius: 14px 4px 14px 14px; background: #dfeee6; }.message-list small { color: #718078; font-size: 9px; font-weight: 800; }.message-list p { margin: 6px 0 0; color: #263b31; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }.assistant-prompt { margin: 14px; border: 1px solid #cad5ce; border-radius: 12px; }.assistant-prompt textarea { width: 100%; resize: vertical; padding: 15px; border: 0; outline: 0; background: transparent; color: #20372c; font: inherit; line-height: 1.5; }.assistant-prompt footer { display: flex; justify-content: space-between; align-items: center; padding: 9px 10px 10px 15px; background: transparent; font-weight: normal; }.assistant-prompt footer span { color: #8a968f; font-size: 9px; }.assistant-prompt button { padding: 9px 15px; border: 0; border-radius: 8px; background: #205c45; color: white; font-weight: 800; }.assistant-prompt button:disabled { opacity: .45; }.assistant-error { padding: 12px; border-left: 4px solid #ef683e; background: #ffe1d5; color: #943b21; }
 .chat-evidence { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }.chat-evidence button { padding: 4px 7px; border: 1px solid #b9ccc1; border-radius: 99px; background: #edf5f0; color: #275e47; font-size: 8px; font-weight: 900; }
 .research-inspector { min-width: 0; padding: 28px; border-left: 1px solid #dfe4df; background: #eef2ee; }.task-status, .evidence-inspector { border: 1px solid #d8e0da; border-radius: 14px; background: white; }.task-status { padding: 18px; }.task-status > header { display: flex; justify-content: space-between; align-items: center; }.task-status header p { margin: 0; color: #8c9992; font-size: 9px; letter-spacing: 1.3px; }.task-status h2 { margin: 5px 0 0; font-size: 18px; }.task-status header > span { padding: 6px 8px; border-radius: 99px; background: #e6efe9; color: #2a634b; font-size: 9px; font-weight: 900; }.task-status ol { display: grid; gap: 7px; margin: 16px 0 0; padding: 0; list-style: none; }.task-status li { display: grid; grid-template-columns: 27px 1fr auto; gap: 9px; align-items: center; padding: 10px; border-radius: 9px; background: #f4f6f3; }.task-status li > i { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid #cbd5ce; border-radius: 50%; font-style: normal; font-size: 9px; }.task-status li div { display: grid; gap: 2px; }.task-status li b { font-size: 11px; }.task-status li small { color: #849089; font-size: 9px; }.task-status li > span { color: #849089; font-size: 8px; text-transform: uppercase; }.task-status li.done > i { border-color: #4a9c6c; background: #4a9c6c; color: white; }.task-status li.running { background: #fff5d8; }.task-status li.blocked { background: #ffe5dc; }.empty-task { color: #79867e; font-size: 11px; line-height: 1.6; }

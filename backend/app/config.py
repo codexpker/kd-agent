@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     astron_agent_api_secret: str = ""
     astron_agent_flow_id: str = ""
     astron_agent_model_label: str = "configured-in-workflow"
+    astron_agent_tool_base_url: str = ""
+    maas_service_id: str = ""
+    platform_verification_evidence_id: str = ""
+    agent_tool_api_token: str = ""
     assistant_model_timeout_seconds: float = 30.0
 
     model_config = SettingsConfigDict(

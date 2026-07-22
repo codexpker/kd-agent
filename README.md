@@ -1,10 +1,21 @@
-# 科大 Agent（重建交接版）
+# 科大 Agent
 
 面向科研新手的论文逆向工程助手。核心链路：
 
 `Problem → Gap → Hypothesis → Method → Claim → Experiment → Figure/Table → Evidence → Boundary`
 
-本版本依据项目对话与方案记录重建，默认采用离线 Gold 数据，可直接运行；MySQL、Milvus、Neo4j、PDF 解析和讯飞星辰均作为可替换基础设施保留接口。
+本项目参加赛题 `XH-202620 面向一流学科建设的学科垂类大模型与创新应用开发`。正式赛事
+基线见 `docs/CONTEST_BASELINE.md`，产品北极星见 `docs/PROJECT_BLUEPRINT.md`。默认采用离线开发数据，可直接运行；MySQL、Milvus、Neo4j、
+PDF解析和外部模型均通过可替换接口接入。
+
+当前仓库不是比赛最终版：5篇登记论文中只有1篇`development_seed`，没有双审/冻结Gold；默认
+检索是Demo/hash后端，默认助理是离线规则；星辰已有客户端、工具契约和Mock测试，但没有平台线上联调证据。
+规则允许其他工具，但项目已冻结正式比赛主链路为
+`Vue → FastAPI → 星辰Agent → 星火/科技文献模型、MaaS → 自研工具`。只有真实联调后才能写入比赛宣传材料。
+
+仓库已提供星辰可注册的`search_papers`、`deconstruct_paper`、`compare_papers`和`diagnose_claim`
+四个结构化工具接口；OpenAPI、系统提示词和工作流节点位于`docs/astron/`。这表示接入准备已完成，
+不表示工具已经在星辰平台发布或产生真实调用。
 
 ## 快速启动
 
@@ -22,10 +33,16 @@ python -m app.cli.demo_start
 python -m app.cli.demo_start --with-infrastructure
 ```
 
-Windows未激活虚拟环境时，可在仓库根目录运行：
+Windows 未激活虚拟环境时，可在仓库根目录运行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.cli.demo_start --with-infrastructure
+```
+
+如果 PowerShell 当前已经位于 `backend` 目录，则虚拟环境在上一级，应运行：
+
+```powershell
+..\.venv\Scripts\python.exe -m app.cli.demo_start --with-infrastructure
 ```
 
 真实模式会启动MySQL/Neo4j、应用Alembic迁移，并以显式`--commit`幂等同步演示开发种子；不会
@@ -61,7 +78,7 @@ npm run dev
 访问 <http://localhost:5173>，默认进入“科研助理”对话式工作台；原有完整结构化编辑器移动到
 <http://localhost:5173/workspace>。API 文档位于 <http://localhost:8000/docs>。
 
-前端顶部的“演示引导”会显示当前究竟是“完全离线模式”还是“本地真实链路”，并按“核心链 →
+前端顶部的“演示引导”会显示当前究竟是“离线演示数据”还是“本地证据基础设施”，并按“核心链 →
 实验意图 → Figure/Table → EvidenceAnchor → 论证路径”导航。`GET /api/v1/demo/readiness`返回同一份
 机器可读状态；`/healthz`只表示API进程存活，不能替代核心链路就绪检查。
 
@@ -78,7 +95,7 @@ Figure/Table、参与支撑哪个Claim以及不能推出什么。摘图窗口不
 记录实际调用的本地工具、来源和EvidenceAnchor。默认`ASSISTANT_SESSION_BACKEND=memory`保持零数据库
 依赖，页面明确提示API重启后清空；显式改为`mysql`并应用`0007_assistant_sessions`后，会话、消息、
 工具运行和证据引用使用规范化MySQL权威表保存，URL中的不透明`session`参数可在刷新或重启后恢复
-同一会话。默认`ASSISTANT_BACKEND=offline`仍明确显示“离线规则 · 本地证据工具”。可选星辰工作流
+同一会话。默认`ASSISTANT_BACKEND=offline`仍明确显示“离线规则 · 本地证据工具”。可配置星辰工作流（正式比赛环境必配）
 只负责依据本地工具结果组织语言，返回内容必须引用已存在的EvidenceAnchor，否则作为错误拒绝，
 不会静默回退成伪造的模型成功。
 

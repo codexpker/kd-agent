@@ -167,6 +167,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"status: {status}")
         if payload is not None:
             print(f"runtime_mode: {payload.get('runtime_mode', 'unknown')}")
+            print(
+                "formal_chain_status: "
+                f"{payload.get('formal_chain_status', 'unknown')}"
+            )
+            detail = payload.get("formal_chain_detail")
+            if detail:
+                print(f"formal_chain_detail: {detail}")
+            for blocker in payload.get("formal_chain_blockers", []):
+                print(f"[formal-blocker] {blocker}")
             for check in payload.get("checks", []):
                 if isinstance(check, dict):
                     print(

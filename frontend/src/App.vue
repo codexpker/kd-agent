@@ -7,21 +7,26 @@ const route = useRoute()
 const apiReady = ref(false)
 const readinessMode = ref<'offline_demo' | 'local_infrastructure' | null>(null)
 const readinessStatus = ref<'ready' | 'degraded' | 'blocked' | null>(null)
+const formalChainStatus = ref<'blocked_external_configuration' | 'configured_unverified' | 'verified' | null>(null)
 const paperMode = computed(() => route.path.startsWith('/papers/'))
 const runtimeLabel = computed(() => {
   if (!apiReady.value) return 'API 未连接'
   if (readinessMode.value === null) return 'API 在线 · 链路状态未知'
+  if (formalChainStatus.value === 'verified') return '讯飞正式链路 · 已核验'
+  if (formalChainStatus.value === 'configured_unverified') return '讯飞链路已配置 · 待真实核验'
   if (readinessMode.value === 'local_infrastructure') {
-    return readinessStatus.value === 'ready' ? 'API 在线 · 本地真实链路' : 'API 在线 · 本地链路待修复'
+    return readinessStatus.value === 'ready' ? '本地证据可用 · 讯飞链路未接入' : '本地基础设施待修复 · 讯飞链路未接入'
   }
-  return 'API 在线 · 完全离线模式'
+  return '本地演示可用 · 讯飞链路未接入'
 })
 
 const sectionLabel = computed(() => {
-  if (route.path === '/assistant') return '科研助理'
+  if (route.path === '/assistant') return '论文逆向工程'
+  if (route.path === '/opportunities') return '领域进展地图'
+  if (route.path === '/projects') return '我的研究教练'
   if (route.path.startsWith('/papers') && route.query.tab === 'graph') return '论文证据关系'
   if (route.path.startsWith('/papers')) return '论文逆向工程'
-  if (route.path === '/workspace') return '专业工作区'
+  if (route.path === '/workspace') return '开发与审核工作区'
   return 'KD Agent'
 })
 
@@ -35,9 +40,11 @@ onMounted(async () => {
         const readiness = await readinessResponse.json() as {
           runtime_mode: 'offline_demo' | 'local_infrastructure'
           status: 'ready' | 'degraded' | 'blocked'
+          formal_chain_status: 'blocked_external_configuration' | 'configured_unverified' | 'verified'
         }
         readinessMode.value = readiness.runtime_mode
         readinessStatus.value = readiness.status
+        formalChainStatus.value = readiness.formal_chain_status
       }
     }
   } catch {
@@ -55,15 +62,13 @@ onMounted(async () => {
       </RouterLink>
 
       <nav aria-label="产品导航">
-        <p>研究流程</p>
-        <RouterLink to="/assistant"><span>01</span>科研助理</RouterLink>
-        <RouterLink to="/projects"><span>02</span>研究项目</RouterLink>
-        <RouterLink to="/papers"><span>03</span>论文与证据</RouterLink>
-        <RouterLink to="/opportunities"><span>04</span>研究机会</RouterLink>
-        <RouterLink to="/experiments"><span>05</span>实验与图表</RouterLink>
-        <RouterLink to="/knowledge-graph"><span>06</span>知识图谱</RouterLink>
-        <p>审核与复现</p>
-        <RouterLink to="/workspace"><span>07</span>专业工作区</RouterLink>
+        <p>三个核心工作台</p>
+        <RouterLink to="/assistant"><span>01</span>论文逆向工程</RouterLink>
+        <RouterLink to="/opportunities#opportunities"><span>02</span>领域进展地图</RouterLink>
+        <RouterLink to="/projects#project-claim"><span>03</span>我的研究教练</RouterLink>
+        <p>证据与开发审核</p>
+        <RouterLink to="/papers"><span>04</span>原文证据核验</RouterLink>
+        <RouterLink to="/workspace"><span>05</span>开发审计</RouterLink>
       </nav>
 
       <section class="integrity-card">
@@ -78,7 +83,7 @@ onMounted(async () => {
         <div><span>当前空间</span><b>{{ sectionLabel }}</b></div>
         <div class="header-actions">
           <DemoGuide />
-          <div class="runtime-status" :class="{ offline: !apiReady, warning: apiReady && readinessStatus !== 'ready' }">
+          <div class="runtime-status" :class="{ offline: !apiReady, warning: apiReady && (readinessStatus !== 'ready' || formalChainStatus !== 'verified') }">
             <i></i>{{ runtimeLabel }}
           </div>
         </div>

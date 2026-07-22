@@ -7,8 +7,8 @@ from app.config import get_settings
 settings = get_settings()
 app = FastAPI(
     title="科大 Agent API",
-    version="0.2.0-reconstructed",
-    description="Evidence-grounded paper reverse engineering API",
+    version="0.3.0",
+    description="Paper reverse engineering and evidence-grounded research coaching API",
 )
 app.add_middleware(
     CORSMiddleware,
@@ -18,4 +18,3 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
-

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.cli import demo_start as demo_start_module
 from app.cli.demo_start import (
     StartupStep,
     build_prepare_steps,
@@ -8,6 +9,31 @@ from app.cli.demo_start import (
     parse_args,
     run_prepare_steps,
 )
+
+
+def test_check_only_prints_local_and_formal_chain_status_separately(
+    monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(
+        demo_start_module,
+        "_readiness_status",
+        lambda _: (
+            "ready",
+            {
+                "runtime_mode": "local_infrastructure",
+                "formal_chain_status": "blocked_external_configuration",
+                "formal_chain_detail": "本地可用，讯飞正式链路尚未接入。",
+                "formal_chain_blockers": ["缺少星辰 Flow ID"],
+                "checks": [],
+            },
+        ),
+    )
+
+    assert demo_start_module.main(["--check-only"]) == 0
+    output = capsys.readouterr().out
+    assert "runtime_mode: local_infrastructure" in output
+    assert "formal_chain_status: blocked_external_configuration" in output
+    assert "[formal-blocker] 缺少星辰 Flow ID" in output
 
 
 def test_offline_start_does_not_enable_external_dependencies() -> None:

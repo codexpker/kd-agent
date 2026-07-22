@@ -1,0 +1,200 @@
+openapi: 3.0.3
+info:
+  title: KD Agent evidence tools for Astron
+  version: 1.0.0
+  description: >-
+    Evidence-bounded tools for paper reverse engineering, multi-paper comparison,
+    and research-claim diagnosis. A 200 response may still carry
+    evidence_status=insufficient_evidence; the Agent must inspect that field.
+servers:
+  - url: https://REPLACE_WITH_PUBLIC_HTTPS_HOST/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /agent-tools/search-papers:
+    post:
+      operationId: search_papers
+      summary: Search registered papers without inventing deep-analysis coverage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchPapersRequest'
+      responses:
+        '200':
+          description: Search result with provenance and evidence status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResponse'
+  /agent-tools/deconstruct-paper:
+    post:
+      operationId: deconstruct_paper
+      summary: Return the evidence-anchored narrative chain for one paper
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeconstructPaperRequest'
+      responses:
+        '200':
+          description: Paper deconstruction with annotation and evidence status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResponse'
+        '404':
+          description: No loadable evidence-anchored paper record
+  /agent-tools/compare-papers:
+    post:
+      operationId: compare_papers
+      summary: Compare two to five papers and stop on insufficient coverage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComparePapersRequest'
+      responses:
+        '200':
+          description: Comparison matrix or explicit insufficient-evidence result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResponse'
+  /agent-tools/diagnose-claim:
+    post:
+      operationId: diagnose_claim
+      summary: Derive minimum experiment and artifact evidence for a user claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiagnoseClaimRequest'
+      responses:
+        '200':
+          description: Stateless evidence-needs diagnosis; not a novelty assessment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SearchPapersRequest:
+      type: object
+      required: [query]
+      additionalProperties: false
+      properties:
+        query:
+          type: string
+          minLength: 2
+          maxLength: 500
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+    DeconstructPaperRequest:
+      type: object
+      required: [paper_id]
+      additionalProperties: false
+      properties:
+        paper_id:
+          type: string
+        focus:
+          type: string
+          enum: [full_chain, claims, experiments, artifacts, boundaries]
+          default: full_chain
+    ComparePapersRequest:
+      type: object
+      required: [paper_ids]
+      additionalProperties: false
+      properties:
+        paper_ids:
+          type: array
+          minItems: 2
+          maxItems: 5
+          uniqueItems: true
+          items:
+            type: string
+        comparison_focus:
+          type: array
+          items:
+            type: string
+            enum: [problem, gap, method, experiment, artifact, boundary]
+    DiagnoseClaimRequest:
+      type: object
+      required: [research_question, hypothesis, proposed_method, target_scenario]
+      additionalProperties: false
+      properties:
+        research_question:
+          type: string
+          minLength: 10
+        hypothesis:
+          type: string
+          minLength: 10
+        proposed_method:
+          type: string
+          minLength: 2
+        target_scenario:
+          type: string
+          minLength: 2
+    AgentToolSource:
+      type: object
+      required: [source_id, title, source_type, verification_status, evidence_ids]
+      properties:
+        source_id:
+          type: string
+        title:
+          type: string
+        source_type:
+          type: string
+          enum: [paper, user_claim]
+        verification_status:
+          type: string
+        evidence_ids:
+          type: array
+          items:
+            type: string
+    AgentToolResponse:
+      type: object
+      required:
+        - schema_version
+        - result
+        - sources
+        - warnings
+        - evidence_status
+        - trace_id
+        - tool_version
+        - data_version
+      properties:
+        schema_version:
+          type: string
+          enum: [agent-tool-response-v1]
+        result:
+          type: object
+          additionalProperties: true
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentToolSource'
+        warnings:
+          type: array
+          items:
+            type: string
+        evidence_status:
+          type: string
+          enum: [verified, partial, insufficient_evidence]
+        trace_id:
+          type: string
+        tool_version:
+          type: string
+        data_version:
+          type: string
