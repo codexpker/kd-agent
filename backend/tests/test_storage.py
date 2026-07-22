@@ -76,6 +76,15 @@ EXPERIMENT_PLAN_TABLES = {
 
 EXPERIMENT_RUN_TABLES = {"experiment_run_manifest_versions"}
 
+ASSISTANT_SESSION_TABLES = {
+    "assistant_sessions",
+    "assistant_messages",
+    "assistant_tool_runs",
+    "assistant_message_evidence",
+    "assistant_tool_run_evidence",
+    "assistant_message_tool_runs",
+}
+
 
 class RecordingGraph:
     def __init__(self, error: Exception | None = None) -> None:
@@ -119,6 +128,7 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         *PROJECT_CLAIM_TABLES,
         *EXPERIMENT_PLAN_TABLES,
         *EXPERIMENT_RUN_TABLES,
+        *ASSISTANT_SESSION_TABLES,
     } <= tables
 
     gold_record_foreign_keys = inspector.get_foreign_keys("paper_gold_records")
@@ -172,6 +182,25 @@ def test_reconstructed_migration_upgrades_from_empty_database(tmp_path: Path) ->
         "experiment_run_manifest_versions",
         "experiment_plan_versions",
     }
+
+    assistant_message_run_foreign_keys = inspector.get_foreign_keys(
+        "assistant_message_tool_runs"
+    )
+    assert {
+        item["referred_table"] for item in assistant_message_run_foreign_keys
+    } == {"assistant_messages", "assistant_tool_runs"}
+
+    command.downgrade(config, "0006_experiment_run_manifests")
+    pre_assistant_tables = set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
+    assert not (ASSISTANT_SESSION_TABLES & pre_assistant_tables)
+    assert EXPERIMENT_RUN_TABLES <= pre_assistant_tables
+
+    command.upgrade(config, "head")
+    assert ASSISTANT_SESSION_TABLES <= set(
+        inspect(create_engine(config.attributes["database_url"])).get_table_names()
+    )
 
     command.downgrade(config, "0005_experiment_artifact_plans")
     plan_only_tables = set(
@@ -238,6 +267,7 @@ def test_sqlalchemy_metadata_contains_normalized_authority_entities() -> None:
         | PROJECT_CLAIM_TABLES
         | EXPERIMENT_PLAN_TABLES
         | EXPERIMENT_RUN_TABLES
+        | ASSISTANT_SESSION_TABLES
     ) <= set(
         Base.metadata.tables
     )

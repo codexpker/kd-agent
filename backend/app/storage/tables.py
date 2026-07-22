@@ -416,6 +416,118 @@ class GraphSyncStateRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class AssistantSessionRow(Base):
+    __tablename__ = "assistant_sessions"
+    __table_args__ = (
+        UniqueConstraint("trace_id", name="uq_assistant_sessions_trace_id"),
+        Index("ix_assistant_sessions_paper_updated", "paper_id", "updated_at"),
+    )
+
+    session_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    paper_id: Mapped[str] = mapped_column(
+        String(191), ForeignKey("papers.paper_id", ondelete="CASCADE"), nullable=False
+    )
+    backend: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage: Mapped[str] = mapped_column(String(32), nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AssistantMessageRow(Base):
+    __tablename__ = "assistant_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id", "message_order", name="uq_assistant_messages_session_order"
+        ),
+    )
+
+    message_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    message_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    origin: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_request_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AssistantToolRunRow(Base):
+    __tablename__ = "assistant_tool_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id", "run_order", name="uq_assistant_tool_runs_session_order"
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_sessions.session_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    run_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    result_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AssistantMessageEvidenceRow(Base):
+    __tablename__ = "assistant_message_evidence"
+
+    message_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_messages.message_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    evidence_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    evidence_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AssistantToolRunEvidenceRow(Base):
+    __tablename__ = "assistant_tool_run_evidence"
+
+    run_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_tool_runs.run_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    evidence_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    evidence_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class AssistantMessageToolRunRow(Base):
+    __tablename__ = "assistant_message_tool_runs"
+
+    message_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_messages.message_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(191),
+        ForeignKey("assistant_tool_runs.run_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    run_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class ProjectClaimVersionRow(Base):
     __tablename__ = "project_claim_versions"
     __table_args__ = (

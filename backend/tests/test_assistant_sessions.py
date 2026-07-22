@@ -1,6 +1,7 @@
 import httpx
 from fastapi.testclient import TestClient
 
+from app.config import get_settings
 from app.gold_dataset import GoldDataset
 from app.main import app
 from app.services.assistant_sessions import (
@@ -284,3 +285,22 @@ def test_assistant_api_exposes_history_conflict_and_unknown_paper() -> None:
         json={"content": "重复旧版本", "expected_message_count": 0},
     )
     assert conflict.status_code == 409
+
+
+def test_mysql_session_backend_failure_returns_503_without_memory_fallback(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("ASSISTANT_SESSION_BACKEND", "mysql")
+    monkeypatch.setenv(
+        "MYSQL_URL", f"sqlite:///{(tmp_path / 'missing-schema.sqlite3').as_posix()}"
+    )
+    get_settings.cache_clear()
+    try:
+        response = TestClient(app).post(
+            "/api/v1/assistant/sessions",
+            json={"paper_id": "anomaly-transformer-2022"},
+        )
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Assistant backend unavailable"
+    finally:
+        get_settings.cache_clear()

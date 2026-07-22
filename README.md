@@ -30,8 +30,10 @@ Windows未激活虚拟环境时，可在仓库根目录运行：
 
 真实模式会启动MySQL/Neo4j、应用Alembic迁移，并以显式`--commit`幂等同步演示开发种子；不会
 写入或复制PDF。服务启动后打开`/assistant?guide=1`，面板会分别检查语义种子、`parsed_pdf`、
-SHA-256匹配的私有页图、Neo4j关系索引和科研助理语言层。已有服务会被复用；命令只会终止由它
-自己启动的进程。只读检查当前运行环境可使用：
+SHA-256匹配的私有页图、Neo4j关系索引、科研助理语言层和会话存储。该模式启动的新API会显式使用
+`ASSISTANT_SESSION_BACKEND=mysql`，会话可跨API重启恢复。已有服务会被复用；若旧API仍是内存会话，
+就绪检查会给出警告，需要先停止旧API再重启真实模式。命令只会终止由它自己启动的进程。只读检查
+当前运行环境可使用：
 
 ```bash
 python -m app.cli.demo_start --check-only
@@ -72,10 +74,13 @@ Figure/Table角色和EvidenceAnchor放在同一审核界面。当前默认数据
 图表页签会从SHA-256匹配的本地私有PDF即时渲染阅读摘图，并按结构化规则说明它回答什么、为何使用
 Figure/Table、参与支撑哪个Claim以及不能推出什么。摘图窗口不写数据库、不作为解析bbox真值。
 
-科研助理首页使用自然语言和四类任务卡导航现有科研工具。论文问答会创建带`trace_id`的进程内
-会话，并记录实际调用的本地工具、来源和EvidenceAnchor；默认`ASSISTANT_BACKEND=offline`，明确显示
-“离线规则 · 本地证据工具”。可选星辰工作流只负责依据本地工具结果组织语言，返回内容必须引用
-已存在的EvidenceAnchor，否则作为错误拒绝，不会静默回退成伪造的模型成功。
+科研助理首页使用自然语言和四类任务卡导航现有科研工具。论文问答会创建带`trace_id`的会话，并
+记录实际调用的本地工具、来源和EvidenceAnchor。默认`ASSISTANT_SESSION_BACKEND=memory`保持零数据库
+依赖，页面明确提示API重启后清空；显式改为`mysql`并应用`0007_assistant_sessions`后，会话、消息、
+工具运行和证据引用使用规范化MySQL权威表保存，URL中的不透明`session`参数可在刷新或重启后恢复
+同一会话。默认`ASSISTANT_BACKEND=offline`仍明确显示“离线规则 · 本地证据工具”。可选星辰工作流
+只负责依据本地工具结果组织语言，返回内容必须引用已存在的EvidenceAnchor，否则作为错误拒绝，
+不会静默回退成伪造的模型成功。
 
 默认`EVIDENCE_GRAPH_BACKEND=gold`保持完全离线，并明确显示`gold_snapshot`，不会把开发种子冒充
 Neo4j查询结果。安装基础设施依赖、启动Neo4j并将该配置改为`neo4j`后，右侧关系图改为读取真实
@@ -110,9 +115,11 @@ Windows没有`make`时，在`backend`目录运行：
 ```
 
 `--with-infrastructure`要求`.env`已配置真实MySQL/Neo4j、`DOCUMENT_STRUCTURE_BACKEND=mysql`、
-`EVIDENCE_GRAPH_BACKEND=neo4j`和仅指向本机授权副本目录的`PRIVATE_PDF_PREVIEW_ROOT`。它会在双库
+`EVIDENCE_GRAPH_BACKEND=neo4j`、`ASSISTANT_SESSION_BACKEND=mysql`和仅指向本机授权副本目录的
+`PRIVATE_PDF_PREVIEW_ROOT`。它会在双库
 幂等验收后运行`npm run test:e2e:real-infra`，验证`parsed_pdf`、即时私有PNG、EvidenceAnchor定位和
-Neo4j Claim路径；不会上传或提交PDF，星辰仍固定为离线。默认`npm run test:e2e`继续只运行无外部
+Neo4j Claim路径，并验证助理会话刷新后恢复；不会上传或提交PDF，星辰仍固定为离线。默认
+`npm run test:e2e`继续只运行无外部
 基础设施的合成黄金流程。
 
 也可以分别运行：

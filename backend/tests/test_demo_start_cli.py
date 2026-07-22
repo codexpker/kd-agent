@@ -3,6 +3,7 @@ from pathlib import Path
 from app.cli.demo_start import (
     StartupStep,
     build_prepare_steps,
+    infrastructure_backend_environment,
     offline_backend_environment,
     parse_args,
     run_prepare_steps,
@@ -17,6 +18,14 @@ def test_offline_start_does_not_enable_external_dependencies() -> None:
     assert environment["EVIDENCE_GRAPH_BACKEND"] == "gold"
     assert environment["PRIVATE_PDF_PREVIEW_ENABLED"] == "false"
     assert environment["ASSISTANT_BACKEND"] == "offline"
+    assert environment["ASSISTANT_SESSION_BACKEND"] == "memory"
+
+
+def test_infrastructure_start_enables_persistent_assistant_history() -> None:
+    environment = infrastructure_backend_environment({"KEEP_ME": "yes"})
+
+    assert environment["KEEP_ME"] == "yes"
+    assert environment["ASSISTANT_SESSION_BACKEND"] == "mysql"
 
 
 def test_infrastructure_preparation_is_explicit_and_idempotent(tmp_path: Path) -> None:

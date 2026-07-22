@@ -44,7 +44,21 @@ class AssistantLanguageProvider(Protocol):
     ) -> ProviderResponse: ...
 
 
+class AssistantSessionStore(Protocol):
+    storage: str
+
+    def create(self, session: AssistantSession) -> AssistantSession: ...
+
+    def get(self, session_id: str) -> AssistantSession | None: ...
+
+    def save(
+        self, session: AssistantSession, expected_message_count: int
+    ) -> AssistantSession: ...
+
+
 class InMemoryAssistantSessionStore:
+    storage = "process_memory"
+
     def __init__(self) -> None:
         self._sessions: dict[str, AssistantSession] = {}
         self._lock = RLock()
@@ -77,7 +91,7 @@ class InMemoryAssistantSessionStore:
 class AssistantSessionService:
     def __init__(
         self,
-        store: InMemoryAssistantSessionStore,
+        store: AssistantSessionStore,
         dataset: GoldDataset,
         *,
         backend: AssistantBackend = "offline",
@@ -95,10 +109,17 @@ class AssistantSessionService:
             raise AssistantSessionNotFoundError(paper_id)
         now = datetime.now(UTC)
         provider_ready = self.backend == "offline" or self.provider is not None
-        warnings = [
-            "Conversation history is stored in process memory and is lost on API restart.",
-            "The session is limited to one public paper-deconstruction record.",
-        ]
+        warnings = ["The session is limited to one public paper-deconstruction record."]
+        if self.store.storage == "process_memory":
+            warnings.insert(
+                0,
+                "Conversation history is stored in process memory and is lost on API restart.",
+            )
+        else:
+            warnings.insert(
+                0,
+                "Conversation, tool-run and evidence-reference history is persisted in MySQL.",
+            )
         if self.backend == "offline":
             warnings.append(
                 "Offline rules organize language from local tools; no external model was called."
@@ -123,6 +144,7 @@ class AssistantSessionService:
             provider_name=provider_name,
             model_label=model_label,
             prompt_version=PROMPT_VERSION,
+            storage=self.store.storage,
             created_at=now,
             updated_at=now,
             warnings=warnings,

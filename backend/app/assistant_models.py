@@ -53,7 +53,7 @@ class AssistantSession(BaseModel):
     provider_name: str
     model_label: str
     prompt_version: str
-    storage: Literal["process_memory"] = "process_memory"
+    storage: Literal["process_memory", "mysql"] = "process_memory"
     created_at: datetime
     updated_at: datetime
     messages: list[AssistantMessage] = Field(default_factory=list)

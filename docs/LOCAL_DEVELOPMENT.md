@@ -80,8 +80,9 @@ npm run dev
 
 当前科研助理默认使用明确标记的离线规则导航：它按自然语言关键词选择现有确定性工具并在不能可靠
 识别意图时要求澄清，没有连接模型时不会伪装成大模型推理。论文拆解问答由服务端会话API执行，
-每轮记录`session_id`、`trace_id`、提示词版本、消息来源、实际工具运行和EvidenceAnchor。会话当前只
-保存在API进程内存，重启后清空；结构化工作区继续保存版本、证据和可复现产物。
+每轮记录`session_id`、`trace_id`、提示词版本、消息来源、实际工具运行和EvidenceAnchor。默认
+`ASSISTANT_SESSION_BACKEND=memory`只保存在API进程内存，重启后清空；显式使用`mysql`时可跨重启
+恢复，结构化工作区继续保存版本、证据和可复现产物。
 
 ### 论文拆解会话与星辰工作流
 
@@ -89,6 +90,7 @@ npm run dev
 
 ```dotenv
 ASSISTANT_BACKEND=offline
+ASSISTANT_SESSION_BACKEND=memory
 ```
 
 创建会话并发送第一轮问题：
@@ -102,9 +104,21 @@ POST /api/v1/assistant/sessions/{session_id}/messages
 ```
 
 第二轮的`expected_message_count`应使用上一响应中`session.messages`的长度；过期计数返回409，避免并发
-覆盖历史。`GET /api/v1/assistant/sessions/{session_id}`读取当前进程内历史。每轮至少执行
+覆盖历史。`GET /api/v1/assistant/sessions/{session_id}`读取当前会话历史。前端把不透明会话ID写入
+`/assistant?session=...`，刷新时重新读取服务端历史；它不把消息正文放进URL。每轮至少执行
 `paper_deconstruct`；涉及页码/章节时增加`document_structure`，涉及关系图时增加`evidence_graph`。
 工具选择是可测试的服务端规则，不应宣称为模型自主工具规划。
+
+要启用跨API重启恢复，先应用迁移并在启动API前设置：
+
+```dotenv
+ASSISTANT_SESSION_BACKEND=mysql
+MYSQL_URL=mysql+pymysql://<user>:<password>@127.0.0.1:<port>/<database>
+```
+
+`0007_assistant_sessions`新增会话、消息、工具运行及其EvidenceAnchor/消息—工具链接表。写入使用
+`expected_message_count`做原子乐观并发检查；过期页面不会覆盖新历史。MySQL不可用时接口返回503，
+不会静默转存到内存。默认内存模式不导入SQLAlchemy/PyMySQL，离线演示兼容性保持不变。
 
 接入已发布并绑定应用的星辰工作流时，只在后端`.env`填写：
 

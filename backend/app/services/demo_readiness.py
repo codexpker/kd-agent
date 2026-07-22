@@ -19,6 +19,7 @@ class ReadinessSettings(Protocol):
     evidence_graph_backend: str
     private_pdf_preview_enabled: bool
     assistant_backend: str
+    assistant_session_backend: str
     astron_agent_api_key: str
     astron_agent_api_secret: str
     astron_agent_flow_id: str
@@ -54,6 +55,7 @@ class DemoReadinessService:
         self._private_pdf_check(document, checks, infrastructure_mode)
         self._graph_check(paper_id, checks, infrastructure_mode)
         checks.append(self._assistant_check())
+        checks.append(self._assistant_storage_check(infrastructure_mode))
 
         required = [item for item in checks if item.required_for_current_mode]
         if any(item.status == "blocked" for item in required):
@@ -306,6 +308,37 @@ class DemoReadinessService:
                 else "已选择星辰后端，但服务端配置不完整。"
             ),
             action="完成脱敏真实联调并记录工作流版本、延迟和失败案例。",
+        )
+
+    def _assistant_storage_check(
+        self, infrastructure_mode: bool
+    ) -> DemoReadinessCheck:
+        persistent = (
+            getattr(self._settings, "assistant_session_backend", "memory") == "mysql"
+        )
+        if persistent:
+            return DemoReadinessCheck(
+                check_id="assistant_session_storage",
+                label="助理会话历史",
+                status="ready",
+                required_for_current_mode=infrastructure_mode,
+                detail="会话、消息、工具运行和EvidenceAnchor引用写入MySQL，可跨API重启恢复。",
+            )
+        return DemoReadinessCheck(
+            check_id="assistant_session_storage",
+            label="助理会话历史",
+            status="ready" if not infrastructure_mode else "warning",
+            required_for_current_mode=infrastructure_mode,
+            detail=(
+                "离线演示使用进程内临时会话；API重启后历史会丢失。"
+                if not infrastructure_mode
+                else "本地基础设施已启用，但助理会话仍是进程内临时存储。"
+            ),
+            action=(
+                "将ASSISTANT_SESSION_BACKEND设为mysql并重启API。"
+                if infrastructure_mode
+                else None
+            ),
         )
 
 

@@ -105,11 +105,34 @@ _memory_experiment_run_store = InMemoryExperimentRunStore()
 _memory_assistant_session_store = InMemoryAssistantSessionStore()
 
 
+def _assistant_session_store():
+    settings = get_settings()
+    if settings.assistant_session_backend == "memory":
+        return _memory_assistant_session_store
+    if settings.assistant_session_backend == "mysql":
+        from app.storage.runtime import get_assistant_session_repository
+
+        return get_assistant_session_repository(settings.mysql_url)
+    raise RuntimeError(
+        "Unsupported assistant_session_backend: "
+        f"{settings.assistant_session_backend}"
+    )
+
+
+def _assistant_session_backend_errors() -> tuple[type[BaseException], ...]:
+    if get_settings().assistant_session_backend == "mysql":
+        from sqlalchemy.exc import SQLAlchemyError
+
+        return (SQLAlchemyError, RuntimeError, ImportError)
+    return (RuntimeError, ImportError)
+
+
 def _assistant_session_service() -> AssistantSessionService:
     settings = get_settings()
+    store = _assistant_session_store()
     if settings.assistant_backend == "offline":
         return AssistantSessionService(
-            _memory_assistant_session_store,
+            store,
             get_gold_dataset(),
             backend="offline",
         )
@@ -125,13 +148,13 @@ def _assistant_session_service() -> AssistantSessionService:
             )
         except AssistantProviderError as exc:
             return AssistantSessionService(
-                _memory_assistant_session_store,
+                store,
                 get_gold_dataset(),
                 backend="astron",
                 provider_warning=str(exc),
             )
         return AssistantSessionService(
-            _memory_assistant_session_store,
+            store,
             get_gold_dataset(),
             backend="astron",
             provider=provider,
@@ -242,21 +265,23 @@ def search(request: SearchRequest) -> SearchResponse:
 def create_assistant_session(
     request: AssistantSessionCreateRequest,
 ) -> AssistantSession:
+    backend_errors = _assistant_session_backend_errors()
     try:
         return _assistant_session_service().create(request.paper_id)
     except AssistantSessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="No public paper record") from exc
-    except (RuntimeError, ImportError) as exc:
+    except backend_errors as exc:
         raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
 
 
 @router.get("/assistant/sessions/{session_id}", response_model=AssistantSession)
 def get_assistant_session(session_id: str) -> AssistantSession:
+    backend_errors = _assistant_session_backend_errors()
     try:
         return _assistant_session_service().get(session_id)
     except AssistantSessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Assistant session not found") from exc
-    except (RuntimeError, ImportError) as exc:
+    except backend_errors as exc:
         raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
 
 
@@ -268,13 +293,14 @@ def send_assistant_message(
     session_id: str,
     request: AssistantMessageRequest,
 ) -> AssistantTurnResponse:
+    backend_errors = _assistant_session_backend_errors()
     try:
         return _assistant_session_service().send(session_id, request)
     except AssistantSessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Assistant session not found") from exc
     except AssistantSessionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except (RuntimeError, ImportError) as exc:
+    except backend_errors as exc:
         raise HTTPException(status_code=503, detail="Assistant backend unavailable") from exc
 
 

@@ -40,6 +40,7 @@ export default defineConfig({
         EVIDENCE_GRAPH_BACKEND: 'gold',
         PRIVATE_PDF_PREVIEW_ENABLED: 'false',
         ASSISTANT_BACKEND: 'offline',
+        ASSISTANT_SESSION_BACKEND: 'memory',
         PROJECT_CLAIM_BACKEND: 'memory',
         EXPERIMENT_RUN_BACKEND: 'memory',
       },

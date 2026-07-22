@@ -144,7 +144,7 @@
   - [x] 前端顶部显示“完全离线模式”或“本地真实链路”，提供五步演示向导，依次导航核心链、实验意图、真实图表、EvidenceAnchor用途和Claim论证路径。
   - [x] 单元、Vue生产构建、离线Playwright和真实基础设施Playwright均覆盖就绪状态与向导；星辰仍为可选语言层，不因未配置而伪报核心链路失败。
 - [x] 建立论文拆解会话、工具运行历史和星辰真实协议适配基础闭环（不代表星辰线上调用已验证）。
-  - [x] 新增创建/读取会话与发送消息API，保存`session_id`、`trace_id`、提示词版本、消息来源、EvidenceAnchor和实际工具运行；当前明确为`process_memory`，API重启后清空。
+  - [x] 新增创建/读取会话与发送消息API，保存`session_id`、`trace_id`、提示词版本、消息来源、EvidenceAnchor和实际工具运行；默认`process_memory`保持离线兼容，显式MySQL模式可跨API重启恢复。
   - [x] 本轮只编排`paper_deconstruct`、`document_structure`和`evidence_graph`，工具选择由可测试的服务端规则完成，不宣称模型已自主规划工具。
   - [x] 默认`ASSISTANT_BACKEND=offline`继续零密钥运行；离线回答标记`offline_rule`，星辰回答标记`model_generated`，前端显示真实后端、trace和工具来源。
   - [x] 按官方星辰工作流HTTP协议实现Bearer鉴权、`flow_id`、`chat_id`和最多12条历史消息；密钥仅从服务端环境变量读取。
@@ -152,5 +152,9 @@
   - [x] 单元/API/Playwright测试覆盖多轮历史、乐观并发、三类工具、证据引用门禁和星辰协议Mock；Mock不作为真实外部模型效果或可用性证据。
 - [ ] 使用团队已发布的星辰工作流和服务端密钥完成首次真实联调，记录工作流/模型版本、脱敏调用日志、延迟和失败案例；完成前不得宣称星辰线上链路已验证。
 - [ ] 建立前端语义审核与批注工作台，使授权用户可在页面确认、修改或驳回自动/开发解读并保留版本历史；完成前“待双审”只是诚实的数据状态，不描述成普通用户必须操作数据库的流程。
-- [ ] 将会话与工具运行历史迁移到MySQL权威存储；当前进程内历史不能描述为跨重启持久化。
+- [x] 将会话与工具运行历史迁移到可选MySQL权威存储。
+  - [x] 新增`0007_assistant_sessions`，规范化保存会话、消息、工具运行、EvidenceAnchor引用和消息—工具链接；不把整段历史塞入单个占位JSON。
+  - [x] `ASSISTANT_SESSION_BACKEND=memory`继续作为零依赖默认值；显式`mysql`时数据库失败返回503，不静默回退到内存。
+  - [x] MySQL写入沿用`expected_message_count`乐观并发门禁；仓储重建测试验证同一`trace_id`、消息、工具运行和证据引用可恢复。
+  - [x] 助理页把不透明会话ID写入查询参数并在刷新后恢复历史，显式显示“进程内临时会话”或“MySQL持久会话”；真实基础设施Playwright已验证刷新后同一trace恢复。
 - [ ] 后续：接入真正的认证身份、受信任外部核验者工作流和加密对象存储；在此之前不得把自报身份或`pending_external_verification`写成已认证/已验证。

@@ -22,6 +22,7 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
     private_pdf_preview: 'ready',
     evidence_graph: 'ready',
     assistant_backend: 'ready',
+    assistant_session_storage: 'ready',
   })
 
   const structureResponse = await request.get(
@@ -54,10 +55,22 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
     data: { paper_id: paperId },
   })
   expect(assistantSession.ok()).toBeTruthy()
-  expect(await assistantSession.json()).toMatchObject({
+  const assistantSessionPayload = await assistantSession.json()
+  expect(assistantSessionPayload).toMatchObject({
     backend: 'offline',
     provider_status: 'ready',
+    storage: 'mysql',
   })
+  const assistantTurn = await request.post(
+    `${backendOrigin}/api/v1/assistant/sessions/${assistantSessionPayload.session_id}/messages`,
+    { data: { content: '解释论文证据链', expected_message_count: 0 } },
+  )
+  expect(assistantTurn.ok()).toBeTruthy()
+  const restoredSession = await request.get(
+    `${backendOrigin}/api/v1/assistant/sessions/${assistantSessionPayload.session_id}`,
+  )
+  expect(restoredSession.ok()).toBeTruthy()
+  expect((await restoredSession.json()).messages).toHaveLength(2)
 
   for (const endpoint of [
     'document-preview/sections/sec-1',
@@ -133,4 +146,15 @@ test('authorized_local_pdf: MySQL, private preview, and Neo4j close the paper-re
   await page.goto('/knowledge-graph')
   await expect(page).toHaveURL(new RegExp(`/papers/${paperId}\\?tab=graph`))
   await expect(page.getByTestId('paper-evidence-graph')).toContainText('neo4j')
+
+  await page.goto('/assistant')
+  await page.getByTestId('run-evidence-demo').click()
+  await expect(page.getByTestId('assistant-storage')).toContainText('MySQL 持久会话')
+  await expect(page).toHaveURL(/session=asst_/)
+  const trace = await page.getByTestId('assistant-trace').locator('span').textContent()
+  await page.reload()
+  await expect(page.getByTestId('assistant-storage')).toContainText('MySQL 持久会话')
+  await expect(page.getByTestId('assistant-trace').locator('span')).toHaveText(trace ?? '')
+  await expect(page.locator('.message-list article')).toHaveCount(2)
+  await expect(page.locator('.message-list article.assistant')).toContainText('已恢复')
 })

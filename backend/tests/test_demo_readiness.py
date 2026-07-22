@@ -12,6 +12,7 @@ def _settings(**overrides: object) -> SimpleNamespace:
         "evidence_graph_backend": "gold",
         "private_pdf_preview_enabled": False,
         "assistant_backend": "offline",
+        "assistant_session_backend": "memory",
         "astron_agent_api_key": "",
         "astron_agent_api_secret": "",
         "astron_agent_flow_id": "",
@@ -44,6 +45,8 @@ def test_offline_readiness_is_complete_without_pdf_neo4j_or_model() -> None:
     assert checks["private_pdf_preview"].status == "not_configured"
     assert checks["private_pdf_preview"].required_for_current_mode is False
     assert checks["assistant_backend"].status == "ready"
+    assert checks["assistant_session_storage"].status == "ready"
+    assert checks["assistant_session_storage"].required_for_current_mode is False
 
 
 def test_local_infrastructure_readiness_requires_real_pdf_and_neo4j() -> None:
@@ -71,6 +74,7 @@ def test_local_infrastructure_readiness_requires_real_pdf_and_neo4j() -> None:
             document_structure_backend="mysql",
             evidence_graph_backend="neo4j",
             private_pdf_preview_enabled=True,
+            assistant_session_backend="mysql",
         ),
         document_loader=lambda _: document,
         graph_loader=lambda _: graph,
@@ -85,6 +89,9 @@ def test_local_infrastructure_readiness_requires_real_pdf_and_neo4j() -> None:
         for item in result.checks
         if item.required_for_current_mode
     )
+    assert next(
+        item for item in result.checks if item.check_id == "assistant_session_storage"
+    ).status == "ready"
 
 
 def test_local_infrastructure_reports_missing_private_pdf_as_blocked() -> None:
@@ -112,6 +119,7 @@ def test_local_infrastructure_reports_missing_private_pdf_as_blocked() -> None:
             document_structure_backend="mysql",
             evidence_graph_backend="neo4j",
             private_pdf_preview_enabled=True,
+            assistant_session_backend="mysql",
         ),
         document_loader=lambda _: document,
         graph_loader=lambda _: graph,

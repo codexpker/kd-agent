@@ -75,10 +75,17 @@ def offline_backend_environment(source: dict[str, str]) -> dict[str, str]:
             "EVIDENCE_GRAPH_BACKEND": "gold",
             "PRIVATE_PDF_PREVIEW_ENABLED": "false",
             "ASSISTANT_BACKEND": "offline",
+            "ASSISTANT_SESSION_BACKEND": "memory",
             "PROJECT_CLAIM_BACKEND": "memory",
             "EXPERIMENT_RUN_BACKEND": "memory",
         }
     )
+    return environment
+
+
+def infrastructure_backend_environment(source: dict[str, str]) -> dict[str, str]:
+    environment = dict(source)
+    environment["ASSISTANT_SESSION_BACKEND"] = "mysql"
     return environment
 
 
@@ -190,7 +197,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if _read_url(backend_health) is None:
             backend_environment = (
-                dict(os.environ)
+                infrastructure_backend_environment(dict(os.environ))
                 if args.with_infrastructure
                 else offline_backend_environment(dict(os.environ))
             )

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     private_pdf_preview_enabled: bool = False
     private_pdf_preview_root: str = ""
     assistant_backend: str = "offline"
+    assistant_session_backend: str = "memory"
     project_claim_backend: str = "memory"
     experiment_run_backend: str = "memory"
     cors_origins: str = "http://localhost:5173"

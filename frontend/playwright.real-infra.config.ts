@@ -42,6 +42,7 @@ export default defineConfig({
         EVIDENCE_GRAPH_BACKEND: 'neo4j',
         PRIVATE_PDF_PREVIEW_ENABLED: 'true',
         ASSISTANT_BACKEND: 'offline',
+        ASSISTANT_SESSION_BACKEND: 'mysql',
         PROJECT_CLAIM_BACKEND: 'memory',
         EXPERIMENT_RUN_BACKEND: 'memory',
         CORS_ORIGINS: 'http://127.0.0.1:5175',

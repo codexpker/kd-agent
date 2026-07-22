@@ -8,6 +8,7 @@ from app.storage.pdf_repository import PdfRepository
 from app.storage.project_claim_repository import ProjectClaimRepository
 from app.storage.experiment_plan_repository import ExperimentPlanRepository
 from app.storage.experiment_run_repository import ExperimentRunRepository
+from app.storage.assistant_session_repository import AssistantSessionRepository
 
 
 @lru_cache
@@ -38,3 +39,10 @@ def get_experiment_plan_repository(database_url: str) -> ExperimentPlanRepositor
 @lru_cache
 def get_experiment_run_repository(database_url: str) -> ExperimentRunRepository:
     return ExperimentRunRepository(get_session_factory(database_url))
+
+
+@lru_cache
+def get_assistant_session_repository(
+    database_url: str,
+) -> AssistantSessionRepository:
+    return AssistantSessionRepository(get_session_factory(database_url))

@@ -54,6 +54,14 @@ type AssistantToolRun = {
   result_summary: string
   evidence_ids: string[]
 }
+type PersistedAssistantMessage = {
+  message_id: string
+  role: 'user' | 'assistant'
+  origin: string
+  content: string
+  evidence_ids: string[]
+  tool_run_ids: string[]
+}
 type AssistantSession = {
   session_id: string
   trace_id: string
@@ -63,8 +71,9 @@ type AssistantSession = {
   provider_name: string
   model_label: string
   prompt_version: string
-  storage: 'process_memory'
-  messages: unknown[]
+  storage: 'process_memory' | 'mysql'
+  messages: PersistedAssistantMessage[]
+  tool_runs: AssistantToolRun[]
   warnings: string[]
 }
 type AssistantTurn = {
@@ -140,6 +149,11 @@ const assistantRuntimeDescription = computed(() => {
   if (assistantSession.value.provider_status === 'unavailable') return '当前会话不会降级伪装成模型回答，请检查服务端星辰配置。'
   return '当前会话由星辰工作流组织语言；事实仍必须引用本地 EvidenceAnchor。'
 })
+const assistantStorageLabel = computed(() => (
+  assistantSession.value?.storage === 'mysql'
+    ? 'MySQL 持久会话 · 刷新和API重启后可恢复'
+    : '进程内临时会话 · API重启后清空'
+))
 
 const focusedGraph = computed(() => {
   if (!graph.value) return { claim: null, paths: [], directEvidence: [] }
@@ -205,7 +219,55 @@ async function ensureAssistantSession() {
   })
   if (!response.ok) throw new Error('无法创建论文拆解会话。')
   assistantSession.value = await response.json()
+  await router.replace({
+    query: { ...route.query, session: assistantSession.value!.session_id },
+  })
   return assistantSession.value!
+}
+
+function restoreAssistantSession(session: AssistantSession) {
+  assistantSession.value = session
+  messageSequence = Math.max(2, session.messages.length + 1)
+  messages.value = session.messages.length
+    ? session.messages.map((message, index) => ({
+        id: index + 1,
+        role: message.role,
+        text: message.content,
+        meta: message.role === 'user'
+          ? '你 · 已恢复'
+          : `${message.origin === 'offline_rule' ? '离线规则' : '科研助理'} · 已恢复`,
+        evidenceIds: message.evidence_ids,
+        origin: message.origin,
+      }))
+    : [{
+        id: 1,
+        role: 'assistant',
+        meta: '科研助理 · 已恢复空会话',
+        text: '会话已恢复。你可以继续提问，下一轮会沿用同一个 trace_id。',
+      }]
+  const lastAssistant = [...session.messages].reverse().find((item) => item.role === 'assistant')
+  const latestRunIds = new Set(lastAssistant?.tool_run_ids ?? [])
+  latestToolRuns.value = session.tool_runs.filter((item) => latestRunIds.has(item.run_id))
+  if (session.messages.length) {
+    activeTask.value = '已恢复论文拆解会话'
+    setSteps([
+      ['恢复持久会话', '从服务端重新读取消息、trace_id 与提示词版本'],
+      ['恢复工具记录', '工具运行及其 EvidenceAnchor 引用保持可追踪'],
+      ['继续当前任务', '新消息仍使用乐观并发检查，避免覆盖历史'],
+    ])
+    taskSteps.value.forEach((item) => { item.status = 'done' })
+  }
+}
+
+async function loadRequestedSession() {
+  const sessionId = typeof route.query.session === 'string' ? route.query.session : ''
+  if (!sessionId) return
+  const response = await fetch(`/api/v1/assistant/sessions/${encodeURIComponent(sessionId)}`)
+  if (response.status === 404) throw new Error('链接中的会话不存在或临时会话已随API重启清空。')
+  if (!response.ok) throw new Error('无法恢复助理会话，请检查会话存储服务。')
+  const session: AssistantSession = await response.json()
+  if (session.paper_id !== paperId) throw new Error('会话绑定的论文与当前演示论文不一致。')
+  restoreAssistantSession(session)
 }
 
 async function askPaperAssistant(question: string) {
@@ -233,7 +295,8 @@ async function askPaperAssistant(question: string) {
       }),
     })
     if (response.status === 409) {
-      assistantSession.value = await fetch(`/api/v1/assistant/sessions/${session.session_id}`).then((item) => item.json())
+      const latest = await fetch(`/api/v1/assistant/sessions/${session.session_id}`).then((item) => item.json())
+      restoreAssistantSession(latest)
       throw new Error('会话历史已变化，请重新发送问题。')
     }
     if (!response.ok) throw new Error('论文拆解会话执行失败。')
@@ -375,7 +438,7 @@ watch(
 
 onMounted(async () => {
   try {
-    await loadPaperAndGraph()
+    await Promise.all([loadPaperAndGraph(), loadRequestedSession()])
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '初始化失败'
   }
@@ -389,7 +452,7 @@ onMounted(async () => {
         <div>
           <p>EVIDENCE-GROUNDED RESEARCH COPILOT</p>
           <h1>让对话推进科研任务，<br /><em>让证据约束每一步。</em></h1>
-          <span>{{ assistantRuntimeDescription }}</span>
+          <span>{{ assistantRuntimeDescription }} {{ assistantSession ? assistantStorageLabel : '' }}</span>
         </div>
         <button data-testid="run-evidence-demo" :disabled="loading" @click="runTask('paper')">
           {{ loading ? '执行中…' : '启动证据链演示' }}
@@ -437,7 +500,7 @@ onMounted(async () => {
           </article>
         </div>
         <footer v-if="assistantSession" data-testid="assistant-trace">
-          <span>{{ assistantSession.trace_id }}</span><small>{{ assistantSession.prompt_version }} · {{ assistantSession.storage }}</small>
+          <span>{{ assistantSession.trace_id }}</span><small data-testid="assistant-storage">{{ assistantSession.prompt_version }} · {{ assistantStorageLabel }}</small>
         </footer>
       </section>
 
