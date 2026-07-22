@@ -14,3 +14,4 @@ tmp*/
 .DS_Store
 *.pdf
 !docs/*.pdf
+*.md
